@@ -1,24 +1,36 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Card from "./components/Card";
 import { generateDeck, shuffleArray } from "./utilities/deckEngine";
 import type { Color, deckOutline } from "./utilities/constants";
 
 type Player = "player" | "ai";
 type WildValue = "Wild" | "Wild4";
+type Screen = "menu" | "rules_ai" | "rules_people" | "ai";
 
 const COLORS: Color[] = ["red", "yellow", "green", "blue"];
+
+interface DiscardEntry {
+  card: deckOutline;
+  player: Player;
+}
 
 interface GameState {
   deck: deckOutline[];
   playerHand: deckOutline[];
   aiHand: deckOutline[];
-  discardPile: deckOutline[];
+  discardPile: DiscardEntry[];
   currentPlayer: Player;
   winner: Player | null;
   direction: 1 | -1;
   pendingWild: { player: Player; value: WildValue } | null;
   unoCalled: { player: boolean; ai: boolean };
   actionNonce: number;
+  unoWindow: {
+    player: boolean;
+    ai: boolean;
+    playerToken: number;
+    aiToken: number;
+  };
 }
 
 function pickRandomColor(): Color {
@@ -39,13 +51,19 @@ function initGame(): GameState {
     deck: remainingDeck,
     playerHand,
     aiHand,
-    discardPile: [discard],
+    discardPile: [{ card: discard, player: "player" }],
     currentPlayer: "player",
     winner: null,
     direction: 1,
     pendingWild: null,
     unoCalled: { player: true, ai: true },
     actionNonce: 0,
+    unoWindow: {
+      player: false,
+      ai: false,
+      playerToken: 0,
+      aiToken: 0,
+    },
   };
 }
 
@@ -85,14 +103,16 @@ function pickBestColor(hand: deckOutline[]): Color {
 
 function refillDeckIfNeeded(
   deck: deckOutline[],
-  discardPile: deckOutline[],
-): { deck: deckOutline[]; discardPile: deckOutline[] } {
+  discardPile: DiscardEntry[],
+): { deck: deckOutline[]; discardPile: DiscardEntry[] } {
   if (deck.length > 0 || discardPile.length <= 1) {
     return { deck, discardPile };
   }
 
   const top = discardPile[discardPile.length - 1];
-  const newDeck = shuffleArray([...discardPile.slice(0, -1)]);
+  const newDeck = shuffleArray(
+    discardPile.slice(0, -1).map((entry) => entry.card),
+  );
   return { deck: newDeck, discardPile: [top] };
 }
 
@@ -118,8 +138,7 @@ function drawCards(
     }
   }
 
-  const nextState = { ...state, deck, discardPile, playerHand, aiHand };
-  return normalizeUno(nextState);
+  return { ...state, deck, discardPile, playerHand, aiHand };
 }
 
 function finishPlay(
@@ -135,7 +154,7 @@ function finishPlay(
       : card;
   let nextState: GameState = {
     ...state,
-    discardPile: [...state.discardPile, cardToDiscard],
+    discardPile: [...state.discardPile, { card: cardToDiscard, player }],
   };
 
   let drawCount = 0;
@@ -172,13 +191,18 @@ function finishPlay(
 
   nextState.currentPlayer = skip ? player : nextPlayer;
   nextState.actionNonce += 1;
-  return normalizeUno(nextState);
+  return nextState;
 }
 
 function App() {
+  const [screen, setScreen] = useState<Screen>("menu");
   const [game, setGame] = useState<GameState>(() => initGame());
+  const [unoBanner, setUnoBanner] = useState<string | null>(null);
+  const unoBannerTimer = useRef<number | null>(null);
+  const aiAutoUnoTimer = useRef<number | null>(null);
+  const aiCallPlayerTimer = useRef<number | null>(null);
   const topCard = useMemo(
-    () => game.discardPile[game.discardPile.length - 1],
+    () => game.discardPile[game.discardPile.length - 1].card,
     [game.discardPile],
   );
 
@@ -190,6 +214,7 @@ function App() {
     winner,
     pendingWild,
     unoCalled,
+    unoWindow,
     actionNonce,
   } = game;
   const playerHasPlayable = playerHand.some((card) =>
@@ -198,6 +223,19 @@ function App() {
 
   function resetGame() {
     setGame(initGame());
+    setUnoBanner(null);
+    if (unoBannerTimer.current !== null) {
+      window.clearTimeout(unoBannerTimer.current);
+      unoBannerTimer.current = null;
+    }
+    if (aiAutoUnoTimer.current !== null) {
+      window.clearTimeout(aiAutoUnoTimer.current);
+      aiAutoUnoTimer.current = null;
+    }
+    if (aiCallPlayerTimer.current !== null) {
+      window.clearTimeout(aiCallPlayerTimer.current);
+      aiCallPlayerTimer.current = null;
+    }
   }
 
   function drawCard(player: Player) {
@@ -213,9 +251,10 @@ function App() {
         return prev;
       }
       const top = prev.discardPile[prev.discardPile.length - 1];
+      const topCard = top.card;
       const hand = player === "player" ? prev.playerHand : prev.aiHand;
       const card = hand[index];
-      if (!card || !isPlayable(card, top)) {
+      if (!card || !isPlayable(card, topCard)) {
         return prev;
       }
 
@@ -224,10 +263,6 @@ function App() {
         ...prev,
         playerHand: player === "player" ? nextHand : prev.playerHand,
         aiHand: player === "ai" ? nextHand : prev.aiHand,
-        unoCalled: {
-          ...prev.unoCalled,
-          [player]: nextHand.length === 1 ? false : true,
-        },
       };
 
       if (card.value === "Wild" || card.value === "Wild4") {
@@ -238,7 +273,7 @@ function App() {
         }
         return {
           ...nextState,
-          discardPile: [...prev.discardPile, card],
+          discardPile: [...prev.discardPile, { card, player }],
           pendingWild: { player, value: card.value },
         };
       }
@@ -274,9 +309,23 @@ function App() {
       nextState = {
         ...nextState,
         unoCalled: { ...nextState.unoCalled, [target]: true },
+        unoWindow: { ...nextState.unoWindow, [target]: false },
+        currentPlayer: "player",
+        actionNonce: nextState.actionNonce + 1,
       };
       return nextState;
     });
+  }
+
+  function showUnoBanner(message: string) {
+    setUnoBanner(message);
+    if (unoBannerTimer.current !== null) {
+      window.clearTimeout(unoBannerTimer.current);
+    }
+    unoBannerTimer.current = window.setTimeout(() => {
+      setUnoBanner(null);
+      unoBannerTimer.current = null;
+    }, 1600);
   }
 
   function chooseWildColor(color: Color) {
@@ -285,7 +334,7 @@ function App() {
         return prev;
       }
       const last = prev.discardPile[prev.discardPile.length - 1];
-      const updatedDiscard = { ...last, color };
+      const updatedDiscard = { ...last.card, color };
       let nextState: GameState = {
         ...prev,
         discardPile: prev.discardPile.slice(0, -1),
@@ -307,14 +356,15 @@ function App() {
           return prev;
         }
         const top = prev.discardPile[prev.discardPile.length - 1];
+        const topCard = top.card;
         const playableIndex = prev.aiHand.findIndex((card) =>
-          isPlayable(card, top),
+          isPlayable(card, topCard),
         );
 
         if (playableIndex === -1) {
           let nextState = drawCards(prev, "ai", 1);
           const drawn = nextState.aiHand[nextState.aiHand.length - 1];
-          if (drawn && isPlayable(drawn, top)) {
+          if (drawn && isPlayable(drawn, topCard)) {
             const chosenColor =
               drawn.value === "Wild" || drawn.value === "Wild4"
                 ? pickBestColor(
@@ -360,23 +410,213 @@ function App() {
   }, [actionNonce, currentPlayer, pendingWild, winner]);
 
   useEffect(() => {
+    setGame((prev) => {
+      if (prev.winner) return prev;
+      let changed = false;
+      let nextState = prev;
+
+      if (prev.playerHand.length === 1 && !prev.unoWindow.player) {
+        nextState = {
+          ...nextState,
+          unoWindow: {
+            ...nextState.unoWindow,
+            player: true,
+            playerToken: nextState.unoWindow.playerToken + 1,
+          },
+          unoCalled: { ...nextState.unoCalled, player: false },
+        };
+        changed = true;
+      }
+
+      if (prev.playerHand.length !== 1 && prev.unoWindow.player) {
+        nextState = {
+          ...nextState,
+          unoWindow: { ...nextState.unoWindow, player: false },
+          unoCalled: { ...nextState.unoCalled, player: true },
+        };
+        changed = true;
+      }
+
+      if (prev.aiHand.length === 1 && !prev.unoWindow.ai) {
+        nextState = {
+          ...nextState,
+          unoWindow: {
+            ...nextState.unoWindow,
+            ai: true,
+            aiToken: nextState.unoWindow.aiToken + 1,
+          },
+          unoCalled: { ...nextState.unoCalled, ai: false },
+        };
+        changed = true;
+      }
+
+      if (prev.aiHand.length !== 1 && prev.unoWindow.ai) {
+        nextState = {
+          ...nextState,
+          unoWindow: { ...nextState.unoWindow, ai: false },
+          unoCalled: { ...nextState.unoCalled, ai: true },
+        };
+        changed = true;
+      }
+
+      return changed ? nextState : prev;
+    });
+  }, [aiHand.length, playerHand.length, winner]);
+
+  useEffect(() => {
     if (winner || pendingWild) return;
-    if (aiHand.length === 1 && !unoCalled.ai) {
-      const timer = setTimeout(() => {
-        callUnoSelf("ai");
-      }, 500);
-      return () => clearTimeout(timer);
+    if (aiAutoUnoTimer.current !== null) {
+      window.clearTimeout(aiAutoUnoTimer.current);
+      aiAutoUnoTimer.current = null;
     }
-    if (playerHand.length === 1 && !unoCalled.player && currentPlayer === "ai") {
-      const timer = setTimeout(() => {
-        callUnoOn("player");
-      }, 500);
-      return () => clearTimeout(timer);
+    if (unoWindow.ai && !unoCalled.ai) {
+      const token = unoWindow.aiToken;
+      aiAutoUnoTimer.current = window.setTimeout(() => {
+        setGame((prev) => {
+          if (!prev.unoWindow.ai || prev.unoWindow.aiToken !== token) {
+            return prev;
+          }
+          if (prev.unoCalled.ai || prev.aiHand.length !== 1) {
+            return prev;
+          }
+          showUnoBanner("AI called UNO!");
+          return {
+            ...prev,
+            unoCalled: { ...prev.unoCalled, ai: true },
+          };
+        });
+      }, 1000);
     }
-  }, [aiHand.length, playerHand.length, currentPlayer, pendingWild, unoCalled, winner]);
+    return () => {
+      if (aiAutoUnoTimer.current !== null) {
+        window.clearTimeout(aiAutoUnoTimer.current);
+        aiAutoUnoTimer.current = null;
+      }
+    };
+  }, [pendingWild, unoCalled.ai, unoWindow.ai, unoWindow.aiToken, winner]);
+
+  useEffect(() => {
+    if (winner || pendingWild) return;
+    if (aiCallPlayerTimer.current !== null) {
+      window.clearTimeout(aiCallPlayerTimer.current);
+      aiCallPlayerTimer.current = null;
+    }
+    if (unoWindow.player && !unoCalled.player) {
+      const token = unoWindow.playerToken;
+      aiCallPlayerTimer.current = window.setTimeout(() => {
+        setGame((prev) => {
+          if (!prev.unoWindow.player || prev.unoWindow.playerToken !== token) {
+            return prev;
+          }
+          if (prev.unoCalled.player || prev.playerHand.length !== 1) {
+            return prev;
+          }
+          let nextState = drawCards(prev, "player", 2);
+          nextState = {
+            ...nextState,
+            unoCalled: { ...nextState.unoCalled, player: true },
+            unoWindow: { ...nextState.unoWindow, player: false },
+          };
+          showUnoBanner("AI called UNO on you. Draw 2.");
+          return nextState;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (aiCallPlayerTimer.current !== null) {
+        window.clearTimeout(aiCallPlayerTimer.current);
+        aiCallPlayerTimer.current = null;
+      }
+    };
+  }, [pendingWild, unoCalled.player, unoWindow.player, unoWindow.playerToken, winner]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
+      {screen === "menu" ? (
+        <div className="mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center gap-6 px-4 text-center">
+          <div className="text-xs uppercase tracking-widest text-slate-400">
+            UNO Clone
+          </div>
+          <div className="text-4xl font-semibold">Choose a mode</div>
+          <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+            <button
+              className="rounded-md bg-emerald-600 px-4 py-3 text-sm text-white hover:bg-emerald-500"
+              onClick={() => setScreen("rules_ai")}
+            >
+              Play vs AI
+            </button>
+            <div className="flex flex-col items-center gap-2 sm:items-stretch">
+              <button
+                className="rounded-md bg-slate-800 px-4 py-3 text-sm text-slate-300 hover:bg-slate-700"
+                disabled
+              >
+                Play vs People (Soon)
+              </button>
+              <button
+                className="rounded-md border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"
+                onClick={() => setScreen("rules_people")}
+              >
+                View Rules
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : screen === "rules_ai" || screen === "rules_people" ? (
+        <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
+          <div>
+            <div className="text-xs uppercase tracking-widest text-slate-400">
+              UNO Clone
+            </div>
+            <div className="text-3xl font-semibold">
+              {screen === "rules_ai" ? "Rules: vs AI" : "Rules: vs People"}
+            </div>
+          </div>
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+            <div className="font-semibold">Core Rules</div>
+            <div className="mt-2 space-y-2 text-slate-300">
+              <div>- Match by color or value to play.</div>
+              <div>- Wild and Wild4 can be played anytime and choose a color.</div>
+              <div>- Skip: next player loses a turn.</div>
+              <div>- Reverse: in 2-player, acts like Skip.</div>
+              <div>- Draw2 / Wild4: next player draws 2 or 4 and is skipped.</div>
+              <div>- If you can’t play, draw one. If playable, you may play it.</div>
+            </div>
+            <div className="mt-4 font-semibold">UNO Call</div>
+            <div className="mt-2 space-y-2 text-slate-300">
+              <div>- When you have 1 card, you must press UNO.</div>
+              <div>
+                - If you don’t, the opponent can call UNO on you and you draw 2.
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+              onClick={() => setScreen("menu")}
+            >
+              Back
+            </button>
+            {screen === "rules_ai" ? (
+              <button
+                className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500"
+                onClick={() => {
+                  setGame(initGame());
+                  setScreen("ai");
+                }}
+              >
+                Start vs AI
+              </button>
+            ) : (
+              <button
+                className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-300"
+                disabled
+              >
+                Start vs People (Soon)
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
       <div className="mx-auto max-w-5xl px-4 py-8">
         <div className="flex items-center justify-between gap-4">
           <div>
@@ -393,6 +633,12 @@ function App() {
               Restart
             </button>
             <button
+              className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+              onClick={() => setScreen("menu")}
+            >
+              Back
+            </button>
+            <button
               className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
               onClick={() => drawCard("player")}
               disabled={
@@ -406,15 +652,25 @@ function App() {
             </button>
             <button
               className="rounded-md bg-amber-500 px-3 py-2 text-sm text-black hover:bg-amber-400 disabled:opacity-50"
-              onClick={() => callUnoSelf("player")}
-              disabled={playerHand.length !== 1 || unoCalled.player}
+              onClick={() => {
+                if (unoWindow.player && !unoCalled.player) {
+                  callUnoSelf("player");
+                  showUnoBanner("You called UNO!");
+                }
+              }}
+              disabled={!unoWindow.player || unoCalled.player}
             >
               UNO
             </button>
             <button
               className="rounded-md bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600 disabled:opacity-50"
-              onClick={() => callUnoOn("ai")}
-              disabled={aiHand.length !== 1 || unoCalled.ai}
+              onClick={() => {
+                if (unoWindow.ai && !unoCalled.ai) {
+                  callUnoOn("ai");
+                  showUnoBanner("UNO called on AI. It draws 2.");
+                }
+              }}
+              disabled={!unoWindow.ai || unoCalled.ai}
             >
               Call UNO (AI)
             </button>
@@ -442,12 +698,6 @@ function App() {
             </div>
             <div className="text-xs text-slate-400">
               Turn: {currentPlayer}
-            </div>
-            <div className="text-xs text-slate-400">
-              AI UNO: {unoCalled.ai ? "called" : "not called"}
-            </div>
-            <div className="text-xs text-slate-400">
-              Your UNO: {unoCalled.player ? "called" : "not called"}
             </div>
             {winner && (
               <div className="rounded-full bg-amber-500/20 px-4 py-2 text-sm text-amber-300">
@@ -500,24 +750,37 @@ function App() {
             </div>
           </div>
         )}
+
+        {unoBanner && (
+          <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            {unoBanner}
+          </div>
+        )}
+
+        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div className="text-sm text-slate-400">Discard History</div>
+          <div className="mt-3 max-h-48 space-y-2 overflow-auto text-xs text-slate-300">
+            {[...game.discardPile]
+              .reverse()
+              .map((entry, index) => (
+                <div
+                  key={`${entry.card.color}-${entry.card.value}-${index}`}
+                  className="flex items-center justify-between rounded-md bg-slate-900/80 px-3 py-2"
+                >
+                  <div>
+                    {entry.card.color}, {entry.card.value}
+                  </div>
+                  <div className="text-slate-500">
+                    {entry.player === "player" ? "You" : "AI"}
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
       </div>
+      )}
     </div>
   );
 }
 
 export default App;
-
-function normalizeUno(state: GameState): GameState {
-  const playerCalled =
-    state.playerHand.length === 1 ? state.unoCalled.player : true;
-  const aiCalled = state.aiHand.length === 1 ? state.unoCalled.ai : true;
-
-  if (
-    playerCalled === state.unoCalled.player &&
-    aiCalled === state.unoCalled.ai
-  ) {
-    return state;
-  }
-
-  return { ...state, unoCalled: { player: playerCalled, ai: aiCalled } };
-}
