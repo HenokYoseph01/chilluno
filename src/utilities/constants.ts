@@ -1,5 +1,6 @@
 export type Color = "red" | "yellow" | "green" | "blue" | "wild";
 export type CardValue =
+  | 0
   | 1
   | 2
   | 3

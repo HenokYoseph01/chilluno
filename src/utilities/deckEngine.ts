@@ -2,25 +2,34 @@ import type { CardValue, Color, deckOutline } from "./constants";
 
 export const generateDeck = (): deckOutline[] => {
   const color: Color[] = ["blue", "green", "red", "yellow"];
-  const normalValue: CardValue[] = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const normalValue: CardValue[] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  const actionValue: CardValue[] = ["Skip", "Reverse", "Draw2"];
   const deck: deckOutline[] = [];
 
-  for (const c in color) {
-    for (const n in normalValue) {
-      deck.push({
-        color: color[c] as Color,
-        value: normalValue[n] as CardValue,
-      });
+  for (const c of color) {
+    deck.push({ color: c, value: 0 });
+    for (const n of normalValue.slice(1)) {
+      deck.push({ color: c, value: n });
+      deck.push({ color: c, value: n });
     }
+
+    for (const a of actionValue) {
+      deck.push({ color: c, value: a });
+      deck.push({ color: c, value: a });
+    }
+  }
+
+  for (let i = 0; i < 4; i += 1) {
+    deck.push({ color: "wild", value: "Wild" });
+    deck.push({ color: "wild", value: "Wild4" });
   }
 
   return shuffleArray(deck);
 };
 
-function shuffleArray<T>(array: T[]): T[] {
+export function shuffleArray<T>(array: T[]): T[] {
   let currentIndex = array.length,
     randomIndex;
-  console.log(array.length);
 
   // While there remain elements to shuffle.
   while (currentIndex !== 0) {
