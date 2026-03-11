@@ -211,6 +211,7 @@ function finishPlay(
 export default function Game({ onBack }: { onBack: () => void }) {
   const [game, setGame] = useState<GameState>(() => initGame());
   const [unoBanner, setUnoBanner] = useState<string | null>(null);
+  const [showExitModal, setShowExitModal] = useState(false);
   const unoBannerTimer = useRef<number | null>(null);
   const aiAutoUnoTimer = useRef<number | null>(null);
   const aiCallPlayerTimer = useRef<number | null>(null);
@@ -617,7 +618,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
           </button>
           <button
             className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
-            onClick={onBack}
+            onClick={() => setShowExitModal(true)}
           >
             Back
           </button>
@@ -663,6 +664,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
       <div className="mt-6 grid gap-6 md:grid-cols-[1fr_auto_1fr]">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="text-sm text-slate-400">AI</div>
+          <div className="text-xs text-slate-500">Cards: {aiHand.length}</div>
           <div className="mt-3 flex flex-wrap gap-2">
             {aiHand.map((_, index) => (
               <div
@@ -692,6 +694,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
 
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="text-sm text-slate-400">You</div>
+          <div className="text-xs text-slate-500">Cards: {playerHand.length}</div>
           <div className="mt-3 flex flex-wrap gap-2">
             {playerHand.map((val, index) => (
               <button
@@ -761,6 +764,33 @@ export default function Game({ onBack }: { onBack: () => void }) {
             ))}
         </div>
       </div>
+
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+            <div className="text-base font-semibold text-slate-100">
+              Leave the game?
+            </div>
+            <div className="mt-2 text-slate-400">
+              Your current game will be lost.
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+                onClick={() => setShowExitModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="rounded-md bg-amber-500 px-3 py-2 text-sm text-black hover:bg-amber-400"
+                onClick={onBack}
+              >
+                Leave
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
