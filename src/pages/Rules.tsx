@@ -1,0 +1,65 @@
+type RulesMode = "ai" | "people";
+
+export default function Rules({
+  mode,
+  onBack,
+  onStartAI,
+}: {
+  mode: RulesMode;
+  onBack: () => void;
+  onStartAI?: () => void;
+}) {
+  return (
+    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
+      <div>
+        <div className="text-xs uppercase tracking-widest text-slate-400">
+          UNO Clone
+        </div>
+        <div className="text-3xl font-semibold">
+          {mode === "ai" ? "Rules: vs AI" : "Rules: vs People"}
+        </div>
+      </div>
+      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+        <div className="font-semibold">Core Rules</div>
+        <div className="mt-2 space-y-2 text-slate-300">
+          <div>- Match by color or value to play.</div>
+          <div>- Wild and Wild4 can be played anytime and choose a color.</div>
+          <div>- Skip: next player loses a turn.</div>
+          <div>- Reverse: in 2-player, acts like Skip.</div>
+          <div>- Draw2 / Wild4: next player draws 2 or 4 and is skipped.</div>
+          <div>- If you can’t play, draw one. If playable, you may play it.</div>
+        </div>
+        <div className="mt-4 font-semibold">UNO Call</div>
+        <div className="mt-2 space-y-2 text-slate-300">
+          <div>- When you have 1 card, you must press UNO.</div>
+          <div>
+            - If you don’t, the opponent can call UNO on you and you draw 2.
+          </div>
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+          onClick={onBack}
+        >
+          Back
+        </button>
+        {mode === "ai" ? (
+          <button
+            className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500"
+            onClick={onStartAI}
+          >
+            Start vs AI
+          </button>
+        ) : (
+          <button
+            className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-300"
+            disabled
+          >
+            Start vs People (Soon)
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
