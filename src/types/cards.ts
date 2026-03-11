@@ -14,7 +14,9 @@ export type CardValue =
   | "Reverse"
   | "Draw2"
   | "Wild"
-  | "Wild4";
+  | "Wild4"
+  | "RPS"
+  | "HeadsTails";
 
 export interface deckOutline {
   color: Color;

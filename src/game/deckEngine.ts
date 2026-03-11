@@ -23,6 +23,10 @@ export const generateDeck = (): deckOutline[] => {
     deck.push({ color: "wild", value: "Wild" });
     deck.push({ color: "wild", value: "Wild4" });
   }
+  for (let i = 0; i < 4; i += 1) {
+    deck.push({ color: "wild", value: "RPS" });
+    deck.push({ color: "wild", value: "HeadsTails" });
+  }
 
   return shuffleArray(deck);
 };

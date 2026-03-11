@@ -5,6 +5,8 @@ import type { Color, deckOutline } from "../types/cards";
 
 type Player = "player" | "ai";
 type WildValue = "Wild" | "Wild4";
+type RpsChoice = "rock" | "paper" | "scissors";
+type CoinChoice = "heads" | "tails";
 
 const COLORS: Color[] = ["red", "yellow", "green", "blue"];
 
@@ -13,16 +15,26 @@ interface DiscardEntry {
   player: Player;
 }
 
+type HistoryEntry =
+  | { id: number; type: "card"; card: deckOutline; player: Player }
+  | { id: number; type: "event"; text: string };
+
 interface GameState {
   deck: deckOutline[];
   playerHand: deckOutline[];
   aiHand: deckOutline[];
   discardPile: DiscardEntry[];
+  history: HistoryEntry[];
+  historyCounter: number;
   currentPlayer: Player;
   winner: Player | null;
   direction: 1 | -1;
   pendingWild: { player: Player; value: WildValue } | null;
   pendingDraw2: number;
+  pendingMiniGame:
+    | { type: "rps"; player: Player }
+    | { type: "coin"; player: Player }
+    | null;
   unoCalled: { player: boolean; ai: boolean };
   actionNonce: number;
   unoWindow: {
@@ -52,11 +64,14 @@ function initGame(): GameState {
     playerHand,
     aiHand,
     discardPile: [{ card: discard, player: "player" }],
+    history: [{ id: 0, type: "card", card: discard, player: "player" }],
+    historyCounter: 1,
     currentPlayer: "player",
     winner: null,
     direction: 1,
     pendingWild: null,
     pendingDraw2: 0,
+    pendingMiniGame: null,
     unoCalled: { player: true, ai: true },
     actionNonce: 0,
     unoWindow: {
@@ -72,6 +87,9 @@ function isPlayable(card: deckOutline, top: deckOutline): boolean {
   if (card.color === "wild" || card.value === "Wild" || card.value === "Wild4") {
     return true;
   }
+  if (card.value === "RPS" || card.value === "HeadsTails") {
+    return true;
+  }
   return card.color === top.color || card.value === top.value;
 }
 
@@ -84,6 +102,47 @@ function isPlayableForTurn(
     return card.value === "Draw2";
   }
   return isPlayable(card, top);
+}
+
+function resolveRpsWinner(
+  playerChoice: RpsChoice,
+  aiChoice: RpsChoice,
+): Player | "tie" {
+  if (playerChoice === aiChoice) return "tie";
+  if (
+    (playerChoice === "rock" && aiChoice === "scissors") ||
+    (playerChoice === "paper" && aiChoice === "rock") ||
+    (playerChoice === "scissors" && aiChoice === "paper")
+  ) {
+    return "player";
+  }
+  return "ai";
+}
+
+function addHistoryCard(
+  state: GameState,
+  card: deckOutline,
+  player: Player,
+): GameState {
+  return {
+    ...state,
+    history: [
+      ...state.history,
+      { id: state.historyCounter, type: "card", card, player },
+    ],
+    historyCounter: state.historyCounter + 1,
+  };
+}
+
+function addHistoryEvent(state: GameState, text: string): GameState {
+  return {
+    ...state,
+    history: [
+      ...state.history,
+      { id: state.historyCounter, type: "event", text },
+    ],
+    historyCounter: state.historyCounter + 1,
+  };
 }
 
 function pickBestColor(hand: deckOutline[]): Color {
@@ -168,6 +227,7 @@ function finishPlay(
     ...state,
     discardPile: [...state.discardPile, { card: cardToDiscard, player }],
   };
+  nextState = addHistoryCard(nextState, cardToDiscard, player);
 
   let drawCount = 0;
   let skip = false;
@@ -212,6 +272,8 @@ export default function Game({ onBack }: { onBack: () => void }) {
   const [game, setGame] = useState<GameState>(() => initGame());
   const [unoBanner, setUnoBanner] = useState<string | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
+  const [rpsSelection, setRpsSelection] = useState<RpsChoice | null>(null);
+  const [coinSelection, setCoinSelection] = useState<CoinChoice | null>(null);
   const unoBannerTimer = useRef<number | null>(null);
   const aiAutoUnoTimer = useRef<number | null>(null);
   const aiCallPlayerTimer = useRef<number | null>(null);
@@ -229,6 +291,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
     winner,
     pendingWild,
     pendingDraw2,
+    pendingMiniGame,
     unoCalled,
     unoWindow,
     actionNonce,
@@ -241,6 +304,8 @@ export default function Game({ onBack }: { onBack: () => void }) {
   function resetGame() {
     setGame(initGame());
     setUnoBanner(null);
+    setRpsSelection(null);
+    setCoinSelection(null);
     if (unoBannerTimer.current !== null) {
       window.clearTimeout(unoBannerTimer.current);
       unoBannerTimer.current = null;
@@ -257,7 +322,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
 
   function drawCard(player: Player) {
     setGame((prev) => {
-      if (prev.winner || prev.pendingWild) return prev;
+      if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       if (prev.pendingDraw2 > 0 && prev.currentPlayer === player) {
         let nextState = drawCards(prev, player, prev.pendingDraw2);
         nextState = {
@@ -277,6 +342,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
       if (prev.winner || prev.currentPlayer !== player || prev.pendingWild) {
         return prev;
       }
+      if (prev.pendingMiniGame) return prev;
       const top = prev.discardPile[prev.discardPile.length - 1].card;
       const hand = player === "player" ? prev.playerHand : prev.aiHand;
       const card = hand[index];
@@ -297,17 +363,32 @@ export default function Game({ onBack }: { onBack: () => void }) {
         aiHand: player === "ai" ? nextHand : prev.aiHand,
       };
 
+      if (card.value === "RPS" || card.value === "HeadsTails") {
+        let miniState: GameState = {
+          ...nextState,
+          discardPile: [...prev.discardPile, { card, player }],
+          pendingMiniGame:
+            card.value === "RPS"
+              ? { type: "rps", player }
+              : { type: "coin", player },
+        };
+        miniState = addHistoryCard(miniState, card, player);
+        return miniState;
+      }
+
       if (card.value === "Wild" || card.value === "Wild4") {
         if (nextHand.length === 0) {
           nextState = finishPlay(nextState, player, card, pickRandomColor());
           nextState.winner = player;
           return nextState;
         }
-        return {
+        let wildState: GameState = {
           ...nextState,
           discardPile: [...prev.discardPile, { card, player }],
           pendingWild: { player, value: card.value },
         };
+        wildState = addHistoryCard(wildState, card, player);
+        return wildState;
       }
 
       nextState = finishPlay(nextState, player, card);
@@ -320,7 +401,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
 
   function callUnoSelf(player: Player) {
     setGame((prev) => {
-      if (prev.winner || prev.pendingWild) return prev;
+      if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       const hand = player === "player" ? prev.playerHand : prev.aiHand;
       if (hand.length !== 1) return prev;
       if (prev.unoCalled[player]) return prev;
@@ -333,7 +414,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
 
   function callUnoOn(target: Player) {
     setGame((prev) => {
-      if (prev.winner || prev.pendingWild) return prev;
+      if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       const hand = target === "player" ? prev.playerHand : prev.aiHand;
       if (hand.length !== 1) return prev;
       if (prev.unoCalled[target]) return prev;
@@ -357,7 +438,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
     unoBannerTimer.current = window.setTimeout(() => {
       setUnoBanner(null);
       unoBannerTimer.current = null;
-    }, 1600);
+    }, 5000);
+  }
+
+  function notify(message: string) {
+    showUnoBanner(message);
+    setGame((prev) => addHistoryEvent(prev, message));
   }
 
   function chooseWildColor(color: Color) {
@@ -380,11 +466,94 @@ export default function Game({ onBack }: { onBack: () => void }) {
     });
   }
 
+  function resolveRps(playerChoice: RpsChoice) {
+    const aiChoice: RpsChoice =
+      (["rock", "paper", "scissors"] as const)[
+        Math.floor(Math.random() * 3)
+      ];
+    setGame((prev) => {
+      if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "rps") {
+        return prev;
+      }
+      const result = resolveRpsWinner(playerChoice, aiChoice);
+      const thrower = prev.pendingMiniGame.player;
+      if (result === "tie") {
+        const nextState = addHistoryEvent(
+          { ...prev, pendingMiniGame: null },
+          "RPS tie. No penalty.",
+        );
+        showUnoBanner("RPS tie. No penalty.");
+        return nextState;
+      }
+      const winnerPlayer: Player = result;
+      if (winnerPlayer === thrower) {
+        const nextState = addHistoryEvent(
+          { ...prev, pendingMiniGame: null, winner: thrower },
+          "RPS win! Thrower wins the game.",
+        );
+        showUnoBanner("RPS win! Thrower wins the game.");
+        return nextState;
+      }
+      const loser: Player = winnerPlayer === "player" ? "ai" : "player";
+      let nextState = drawCards(prev, loser, 4);
+      nextState = {
+        ...nextState,
+        pendingMiniGame: null,
+        currentPlayer: thrower === "player" ? "ai" : "player",
+        actionNonce: nextState.actionNonce + 1,
+      };
+      nextState = addHistoryEvent(
+        nextState,
+        `RPS: ${playerChoice} vs ${aiChoice}. ${loser} draws 4.`,
+      );
+      showUnoBanner(`RPS: ${playerChoice} vs ${aiChoice}. ${loser} draws 4.`);
+      return nextState;
+    });
+    setRpsSelection(null);
+  }
+
+  function resolveCoin(choice: CoinChoice) {
+    const flip: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
+    setGame((prev) => {
+      if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "coin") {
+        return prev;
+      }
+      const thrower = prev.pendingMiniGame.player;
+      const throwerWon = choice === flip;
+      const loser: Player = throwerWon
+        ? thrower === "player"
+          ? "ai"
+          : "player"
+        : thrower;
+      let nextState = drawCards(prev, loser, 3);
+      nextState = {
+        ...nextState,
+        pendingMiniGame: null,
+        currentPlayer: thrower === "player" ? "ai" : "player",
+        actionNonce: nextState.actionNonce + 1,
+      };
+      nextState = addHistoryEvent(
+        nextState,
+        `Coin: ${choice} vs ${flip}. ${loser} draws 3.`,
+      );
+      showUnoBanner(`Coin: ${choice} vs ${flip}. ${loser} draws 3.`);
+      return nextState;
+    });
+    setCoinSelection(null);
+  }
+
   useEffect(() => {
-    if (winner || currentPlayer !== "ai" || pendingWild) return;
+    if (winner || currentPlayer !== "ai" || pendingWild || pendingMiniGame) {
+      return;
+    }
     const timer = setTimeout(() => {
       setGame((prev) => {
-        if (prev.winner || prev.currentPlayer !== "ai" || prev.pendingWild) {
+        if (
+          prev.winner ||
+          prev.currentPlayer !== "ai" ||
+          prev.pendingWild ||
+          prev.pendingMiniGame
+        ) {
           return prev;
         }
         if (prev.pendingDraw2 > 0) {
@@ -477,7 +646,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [actionNonce, currentPlayer, pendingWild, winner]);
+  }, [actionNonce, currentPlayer, pendingMiniGame, pendingWild, winner]);
 
   useEffect(() => {
     setGame((prev) => {
@@ -534,7 +703,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
   }, [aiHand.length, playerHand.length, winner]);
 
   useEffect(() => {
-    if (winner || pendingWild) return;
+    setRpsSelection(null);
+    setCoinSelection(null);
+  }, [pendingMiniGame]);
+
+  useEffect(() => {
+    if (winner || pendingWild || pendingMiniGame) return;
     if (aiAutoUnoTimer.current !== null) {
       window.clearTimeout(aiAutoUnoTimer.current);
       aiAutoUnoTimer.current = null;
@@ -550,10 +724,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
             return prev;
           }
           showUnoBanner("AI called UNO!");
-          return {
+          let nextState: GameState = {
             ...prev,
             unoCalled: { ...prev.unoCalled, ai: true },
           };
+          nextState = addHistoryEvent(nextState, "AI called UNO!");
+          return nextState;
         });
       }, 1000);
     }
@@ -563,10 +739,17 @@ export default function Game({ onBack }: { onBack: () => void }) {
         aiAutoUnoTimer.current = null;
       }
     };
-  }, [pendingWild, unoCalled.ai, unoWindow.ai, unoWindow.aiToken, winner]);
+  }, [
+    pendingMiniGame,
+    pendingWild,
+    unoCalled.ai,
+    unoWindow.ai,
+    unoWindow.aiToken,
+    winner,
+  ]);
 
   useEffect(() => {
-    if (winner || pendingWild) return;
+    if (winner || pendingWild || pendingMiniGame) return;
     if (aiCallPlayerTimer.current !== null) {
       window.clearTimeout(aiCallPlayerTimer.current);
       aiCallPlayerTimer.current = null;
@@ -587,6 +770,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
             unoCalled: { ...nextState.unoCalled, player: true },
             unoWindow: { ...nextState.unoWindow, player: false },
           };
+          nextState = addHistoryEvent(nextState, "AI called UNO on you. Draw 2.");
           showUnoBanner("AI called UNO on you. Draw 2.");
           return nextState;
         });
@@ -598,7 +782,24 @@ export default function Game({ onBack }: { onBack: () => void }) {
         aiCallPlayerTimer.current = null;
       }
     };
-  }, [pendingWild, unoCalled.player, unoWindow.player, unoWindow.playerToken, winner]);
+  }, [
+    pendingMiniGame,
+    pendingWild,
+    unoCalled.player,
+    unoWindow.player,
+    unoWindow.playerToken,
+    winner,
+  ]);
+
+  useEffect(() => {
+    if (!pendingMiniGame || pendingMiniGame.type !== "coin") return;
+    if (pendingMiniGame.player !== "ai") return;
+    const timer = setTimeout(() => {
+      const aiChoice: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
+      resolveCoin(aiChoice);
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [pendingMiniGame]);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
@@ -629,6 +830,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
               currentPlayer !== "player" ||
               !!winner ||
               pendingWild ||
+              pendingMiniGame ||
               playerHasPlayable
             }
           >
@@ -639,7 +841,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
             onClick={() => {
               if (unoWindow.player && !unoCalled.player) {
                 callUnoSelf("player");
-                showUnoBanner("You called UNO!");
+                notify("You called UNO!");
               }
             }}
             disabled={!unoWindow.player || unoCalled.player}
@@ -651,7 +853,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
             onClick={() => {
               if (unoWindow.ai && !unoCalled.ai) {
                 callUnoOn("ai");
-                showUnoBanner("UNO called on AI. It draws 2.");
+                notify("UNO called on AI. It draws 2.");
               }
             }}
             disabled={!unoWindow.ai || unoCalled.ai}
@@ -704,6 +906,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
                   currentPlayer !== "player" ||
                   !!winner ||
                   pendingWild !== null ||
+                  pendingMiniGame !== null ||
                   !isPlayableForTurn(val, topCard, pendingDraw2)
                 }
                 className="rounded-lg transition hover:-translate-y-1 disabled:opacity-50"
@@ -738,6 +941,96 @@ export default function Game({ onBack }: { onBack: () => void }) {
         </div>
       )}
 
+      {pendingMiniGame && pendingMiniGame.type === "rps" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+            <div className="text-base font-semibold text-slate-100">
+              Rock, Paper, Scissors
+            </div>
+            <div className="mt-2 text-slate-400">
+              Choose your move. Winner decides the outcome.
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              {(["rock", "paper", "scissors"] as const).map((choice) => (
+                <button
+                  key={choice}
+                  className={`flex-1 rounded-md px-3 py-2 text-sm capitalize ${
+                    rpsSelection === choice
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                  onClick={() => setRpsSelection(choice)}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              <button
+                className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+                onClick={() => {
+                  if (rpsSelection) resolveRps(rpsSelection);
+                }}
+                disabled={!rpsSelection}
+              >
+                Play
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pendingMiniGame && pendingMiniGame.type === "coin" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+            <div className="text-base font-semibold text-slate-100">
+              Heads or Tails
+            </div>
+            <div className="mt-2 text-slate-400">
+              {pendingMiniGame.player === "player"
+                ? "Pick heads or tails."
+                : "AI is choosing a side."}
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-2">
+              {(["heads", "tails"] as const).map((choice) => (
+                <button
+                  key={choice}
+                  className={`flex-1 rounded-md px-3 py-2 text-sm capitalize ${
+                    coinSelection === choice
+                      ? "bg-emerald-600 text-white"
+                      : "bg-slate-800 hover:bg-slate-700"
+                  }`}
+                  onClick={() => setCoinSelection(choice)}
+                  disabled={pendingMiniGame.player !== "player"}
+                >
+                  {choice}
+                </button>
+              ))}
+            </div>
+            <div className="mt-4 flex items-center justify-end gap-2">
+              {pendingMiniGame.player === "player" ? (
+                <button
+                  className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+                  onClick={() => {
+                    if (coinSelection) resolveCoin(coinSelection);
+                  }}
+                  disabled={!coinSelection}
+                >
+                  Flip
+                </button>
+              ) : (
+                <button
+                  className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-400"
+                  disabled
+                >
+                  Waiting...
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {unoBanner && (
         <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           {unoBanner}
@@ -747,19 +1040,28 @@ export default function Game({ onBack }: { onBack: () => void }) {
       <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <div className="text-sm text-slate-400">Discard History</div>
         <div className="mt-3 max-h-48 space-y-2 overflow-auto text-xs text-slate-300">
-          {[...game.discardPile]
+          {[...game.history]
             .reverse()
-            .map((entry, index) => (
+            .map((entry) => (
               <div
-                key={`${entry.card.color}-${entry.card.value}-${index}`}
+                key={entry.id}
                 className="flex items-center justify-between rounded-md bg-slate-900/80 px-3 py-2"
               >
-                <div>
-                  {entry.card.color}, {entry.card.value}
-                </div>
-                <div className="text-slate-500">
-                  {entry.player === "player" ? "You" : "AI"}
-                </div>
+                {entry.type === "card" ? (
+                  <>
+                    <div>
+                      {entry.card.color}, {entry.card.value}
+                    </div>
+                    <div className="text-slate-500">
+                      {entry.player === "player" ? "You" : "AI"}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-slate-200">{entry.text}</div>
+                    <div className="text-slate-500">Event</div>
+                  </>
+                )}
               </div>
             ))}
         </div>
