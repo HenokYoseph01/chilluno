@@ -1,4 +1,4 @@
-import type { CardValue, Color } from "../utilities/constants";
+import type { CardValue, Color } from "../types/cards";
 
 interface cardProps {
   color: Color;
