@@ -26,14 +26,25 @@ export default function Rules({
           <div>- Wild and Wild4 can be played anytime and choose a color.</div>
           <div>- Skip: next player loses a turn.</div>
           <div>- Reverse: in 2-player, acts like Skip.</div>
-          <div>- Draw2 / Wild4: next player draws 2 or 4 and is skipped.</div>
+          <div>- Draw2: next player can stack another Draw2.</div>
+          <div>- If a Draw2 stack ends, the next player draws the stack total.</div>
+          <div>- Wild4: next player draws 4 and is skipped.</div>
           <div>- If you can’t play, draw one. If playable, you may play it.</div>
         </div>
         <div className="mt-4 font-semibold">UNO Call</div>
         <div className="mt-2 space-y-2 text-slate-300">
           <div>- When you have 1 card, you must press UNO.</div>
+          <div>- If you don’t, the opponent can call UNO on you and you draw 2.</div>
+        </div>
+        <div className="mt-4 font-semibold">Special Cards</div>
+        <div className="mt-2 space-y-2 text-slate-300">
           <div>
-            - If you don’t, the opponent can call UNO on you and you draw 2.
+            - RPS: both players play Rock/Paper/Scissors. If the thrower wins,
+            they win the game. Otherwise, the loser draws 4.
+          </div>
+          <div>
+            - Heads/Tails: thrower picks a side. If correct, opponent draws 3.
+            If wrong, thrower draws 3.
           </div>
         </div>
       </div>
