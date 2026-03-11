@@ -22,6 +22,7 @@ interface GameState {
   winner: Player | null;
   direction: 1 | -1;
   pendingWild: { player: Player; value: WildValue } | null;
+  pendingDraw2: number;
   unoCalled: { player: boolean; ai: boolean };
   actionNonce: number;
   unoWindow: {
@@ -55,6 +56,7 @@ function initGame(): GameState {
     winner: null,
     direction: 1,
     pendingWild: null,
+    pendingDraw2: 0,
     unoCalled: { player: true, ai: true },
     actionNonce: 0,
     unoWindow: {
@@ -71,6 +73,17 @@ function isPlayable(card: deckOutline, top: deckOutline): boolean {
     return true;
   }
   return card.color === top.color || card.value === top.value;
+}
+
+function isPlayableForTurn(
+  card: deckOutline,
+  top: deckOutline,
+  pendingDraw2: number,
+): boolean {
+  if (pendingDraw2 > 0) {
+    return card.value === "Draw2";
+  }
+  return isPlayable(card, top);
 }
 
 function pickBestColor(hand: deckOutline[]): Color {
@@ -159,6 +172,7 @@ function finishPlay(
   let drawCount = 0;
   let skip = false;
   let direction = state.direction;
+  let pendingDraw2 = state.pendingDraw2;
 
   if (card.value === "Reverse") {
     direction = direction === 1 ? -1 : 1;
@@ -172,8 +186,7 @@ function finishPlay(
   }
 
   if (card.value === "Draw2") {
-    drawCount = 2;
-    skip = true;
+    pendingDraw2 += 2;
   }
 
   if (card.value === "Wild4") {
@@ -188,7 +201,9 @@ function finishPlay(
     nextState = drawCards(nextState, nextPlayer, drawCount);
   }
 
-  nextState.currentPlayer = skip ? player : nextPlayer;
+  nextState.currentPlayer =
+    card.value === "Draw2" ? nextPlayer : skip ? player : nextPlayer;
+  nextState.pendingDraw2 = pendingDraw2;
   nextState.actionNonce += 1;
   return nextState;
 }
@@ -212,13 +227,14 @@ export default function Game({ onBack }: { onBack: () => void }) {
     currentPlayer,
     winner,
     pendingWild,
+    pendingDraw2,
     unoCalled,
     unoWindow,
     actionNonce,
   } = game;
 
   const playerHasPlayable = playerHand.some((card) =>
-    isPlayable(card, topCard),
+    isPlayableForTurn(card, topCard, pendingDraw2),
   );
 
   function resetGame() {
@@ -241,6 +257,16 @@ export default function Game({ onBack }: { onBack: () => void }) {
   function drawCard(player: Player) {
     setGame((prev) => {
       if (prev.winner || prev.pendingWild) return prev;
+      if (prev.pendingDraw2 > 0 && prev.currentPlayer === player) {
+        let nextState = drawCards(prev, player, prev.pendingDraw2);
+        nextState = {
+          ...nextState,
+          pendingDraw2: 0,
+          currentPlayer: player === "player" ? "ai" : "player",
+          actionNonce: nextState.actionNonce + 1,
+        };
+        return nextState;
+      }
       return drawCards(prev, player, 1);
     });
   }
@@ -253,7 +279,13 @@ export default function Game({ onBack }: { onBack: () => void }) {
       const top = prev.discardPile[prev.discardPile.length - 1].card;
       const hand = player === "player" ? prev.playerHand : prev.aiHand;
       const card = hand[index];
-      if (!card || !isPlayable(card, top)) {
+      if (!card) {
+        return prev;
+      }
+      if (prev.pendingDraw2 > 0 && card.value !== "Draw2") {
+        return prev;
+      }
+      if (prev.pendingDraw2 === 0 && !isPlayable(card, top)) {
         return prev;
       }
 
@@ -354,35 +386,74 @@ export default function Game({ onBack }: { onBack: () => void }) {
         if (prev.winner || prev.currentPlayer !== "ai" || prev.pendingWild) {
           return prev;
         }
+        if (prev.pendingDraw2 > 0) {
+          const draw2Index = prev.aiHand.findIndex(
+            (card) => card.value === "Draw2",
+          );
+          if (draw2Index >= 0) {
+            const card = prev.aiHand[draw2Index];
+            const nextHand = prev.aiHand.filter((_, i) => i !== draw2Index);
+            let nextState: GameState = {
+              ...prev,
+              aiHand: nextHand,
+            };
+            nextState = finishPlay(nextState, "ai", card);
+            if (nextHand.length === 0) {
+              nextState.winner = "ai";
+            }
+            return nextState;
+          }
+          let nextState = drawCards(prev, "ai", prev.pendingDraw2);
+          nextState = {
+            ...nextState,
+            pendingDraw2: 0,
+            currentPlayer: "player",
+            actionNonce: nextState.actionNonce + 1,
+          };
+          return nextState;
+        }
         const top = prev.discardPile[prev.discardPile.length - 1].card;
         const playableIndex = prev.aiHand.findIndex((card) =>
           isPlayable(card, top),
         );
 
         if (playableIndex === -1) {
-          let nextState = drawCards(prev, "ai", 1);
-          const drawn = nextState.aiHand[nextState.aiHand.length - 1];
-          if (drawn && isPlayable(drawn, top)) {
-            const chosenColor =
-              drawn.value === "Wild" || drawn.value === "Wild4"
-                ? pickBestColor(
-                    nextState.aiHand.filter(
-                      (_, i) => i !== nextState.aiHand.length - 1,
-                    ),
-                  )
-                : undefined;
-            const updatedHand = nextState.aiHand.slice(0, -1);
-            nextState = {
-              ...nextState,
-              aiHand: updatedHand,
-            };
-            nextState = finishPlay(nextState, "ai", drawn, chosenColor);
-            if (updatedHand.length === 0) {
-              nextState.winner = "ai";
+          let nextState = prev;
+          let drewPlayable = false;
+          while (true) {
+            nextState = drawCards(nextState, "ai", 1);
+            const drawn = nextState.aiHand[nextState.aiHand.length - 1];
+            if (!drawn) {
+              break;
             }
-            return nextState;
+            if (isPlayable(drawn, top)) {
+              const chosenColor =
+                drawn.value === "Wild" || drawn.value === "Wild4"
+                  ? pickBestColor(
+                      nextState.aiHand.filter(
+                        (_, i) => i !== nextState.aiHand.length - 1,
+                      ),
+                    )
+                  : undefined;
+              const updatedHand = nextState.aiHand.slice(0, -1);
+              nextState = {
+                ...nextState,
+                aiHand: updatedHand,
+              };
+              nextState = finishPlay(nextState, "ai", drawn, chosenColor);
+              if (updatedHand.length === 0) {
+                nextState.winner = "ai";
+              }
+              drewPlayable = true;
+              break;
+            }
+            if (nextState.deck.length === 0) {
+              break;
+            }
           }
-          return { ...nextState, currentPlayer: "player" };
+          return drewPlayable
+            ? nextState
+            : { ...nextState, currentPlayer: "player" };
         }
 
         const card = prev.aiHand[playableIndex];
@@ -606,7 +677,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
           <div className="text-sm text-slate-400">Discard</div>
           <Card color={topCard.color} value={topCard.value} />
           <div className="text-xs text-slate-400">Deck: {deck.length} cards</div>
-          <div className="text-xs text-slate-400">Turn: {currentPlayer}</div>
+            <div className="text-xs text-slate-400">Turn: {currentPlayer}</div>
+            {pendingDraw2 > 0 && (
+              <div className="text-xs text-amber-300">
+                Pending Draw2 stack: {pendingDraw2}
+              </div>
+            )}
           {winner && (
             <div className="rounded-full bg-amber-500/20 px-4 py-2 text-sm text-amber-300">
               Winner: {winner}
@@ -625,7 +701,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
                   currentPlayer !== "player" ||
                   !!winner ||
                   pendingWild !== null ||
-                  !isPlayable(val, topCard)
+                  !isPlayableForTurn(val, topCard, pendingDraw2)
                 }
                 className="rounded-lg transition hover:-translate-y-1 disabled:opacity-50"
               >
