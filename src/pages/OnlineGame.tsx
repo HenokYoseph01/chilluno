@@ -57,6 +57,13 @@ export default function OnlineGame({
   const playerHasPlayable = hand.some((card) =>
     isPlayableForTurn(card, topCard, state.pendingDraw2),
   );
+  const lastEvent = useMemo(() => {
+    for (let i = state.history.length - 1; i >= 0; i -= 1) {
+      const entry = state.history[i];
+      if (entry.type === "event") return entry.text;
+    }
+    return null;
+  }, [state.history]);
 
   useEffect(() => {
     setRpsSelection(null);
@@ -69,10 +76,10 @@ export default function OnlineGame({
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6 pb-28">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-widest text-slate-400">
-            UNO Clone
+          <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+            Chill Coding Lounge
           </div>
-          <div className="text-2xl font-semibold">Online Room</div>
+          <div className="text-2xl font-semibold">Chillno Arena</div>
           <div className="text-xs text-slate-500">
             Room ID: {state.roomId}
             {state.isPrivate && state.roomCode
@@ -105,6 +112,11 @@ export default function OnlineGame({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+        {lastEvent && (
+          <div className="lg:col-span-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+            {lastEvent}
+          </div>
+        )}
         <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm">
           <div className="text-slate-400">Players</div>
           <div className="space-y-3">

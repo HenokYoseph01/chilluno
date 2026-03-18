@@ -114,6 +114,7 @@ type PublicState = {
 type ClientInfo = {
   id: PlayerId;
   name: string;
+  nameSet: boolean;
   ws: WebSocket;
   roomId: string | null;
   queueSize: 2 | 3 | 4 | null;
@@ -458,6 +459,7 @@ wss.on("connection", (ws) => {
   const client: ClientInfo = {
     id,
     name: "Guest",
+    nameSet: false,
     ws,
     roomId: null,
     queueSize: null,
@@ -478,18 +480,31 @@ wss.on("connection", (ws) => {
     if (message.type === "hello") {
       if (message.name && message.name.trim().length > 0) {
         client.name = message.name.trim().slice(0, 24);
+        client.nameSet = true;
+      } else {
+        send(ws, { type: "error", message: "Name is required." });
       }
       send(ws, { type: "connected", id: client.id, name: client.name });
       return;
     }
 
     if (message.type === "set_name") {
-      client.name = message.name.trim().slice(0, 24) || "Guest";
+      const trimmed = message.name.trim();
+      if (!trimmed) {
+        send(ws, { type: "error", message: "Name is required." });
+        return;
+      }
+      client.name = trimmed.slice(0, 24);
+      client.nameSet = true;
       send(ws, { type: "connected", id: client.id, name: client.name });
       return;
     }
 
     if (message.type === "join_lobby") {
+      if (!client.nameSet) {
+        send(ws, { type: "error", message: "Name is required." });
+        return;
+      }
       removeFromQueues(client.id);
       if (client.roomId) return;
       const size = message.desiredPlayers;
@@ -502,6 +517,10 @@ wss.on("connection", (ws) => {
     }
 
     if (message.type === "create_private") {
+      if (!client.nameSet) {
+        send(ws, { type: "error", message: "Name is required." });
+        return;
+      }
       removeFromQueues(client.id);
       if (client.roomId) return;
       createPrivateRoom(message.desiredPlayers, client);
@@ -510,6 +529,10 @@ wss.on("connection", (ws) => {
     }
 
     if (message.type === "join_private") {
+      if (!client.nameSet) {
+        send(ws, { type: "error", message: "Name is required." });
+        return;
+      }
       removeFromQueues(client.id);
       const code = message.code.trim().toUpperCase();
       const roomId = roomCodes.get(code);

@@ -17,6 +17,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [privateCode, setPrivateCode] = useState("");
   const [lobbyTab, setLobbyTab] = useState<"public" | "private">("public");
+  const nameReady = name.trim().length > 0;
   const wsUrl = useMemo(
     () => import.meta.env.VITE_WS_URL ?? DEFAULT_WS_URL,
     [],
@@ -102,11 +103,11 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   function handleJoinLobby() {
     if (!connected) return;
-    if (name.trim()) {
-      send({ type: "set_name", name });
-    } else {
-      send({ type: "hello" });
+    if (!nameReady) {
+      setError("Please enter a name to play.");
+      return;
     }
+    send({ type: "set_name", name });
     send({ type: "join_lobby", desiredPlayers });
   }
 
@@ -117,22 +118,22 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   function handleCreatePrivate() {
     if (!connected) return;
-    if (name.trim()) {
-      send({ type: "set_name", name });
-    } else {
-      send({ type: "hello" });
+    if (!nameReady) {
+      setError("Please enter a name to play.");
+      return;
     }
+    send({ type: "set_name", name });
     send({ type: "create_private", desiredPlayers });
   }
 
   function handleJoinPrivate() {
     if (!connected) return;
     if (!privateCode.trim()) return;
-    if (name.trim()) {
-      send({ type: "set_name", name });
-    } else {
-      send({ type: "hello" });
+    if (!nameReady) {
+      setError("Please enter a name to play.");
+      return;
     }
+    send({ type: "set_name", name });
     send({ type: "join_private", code: privateCode.trim() });
   }
 
@@ -155,13 +156,13 @@ export default function Online({ onBack }: { onBack: () => void }) {
     return (
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
         <div>
-          <div className="text-xs uppercase tracking-widest text-slate-400">
-            UNO Clone
-          </div>
-          <div className="text-3xl font-semibold">Private Room</div>
-          <div className="text-xs text-slate-500">
-            Waiting for players...
-          </div>
+        <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+          Chill Coding Lounge
+        </div>
+        <div className="text-3xl font-semibold">Chillno Private Room</div>
+        <div className="text-xs text-slate-500">
+          Waiting for players...
+        </div>
         </div>
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
           <div className="text-slate-400">Room Code</div>
@@ -204,23 +205,31 @@ export default function Online({ onBack }: { onBack: () => void }) {
   return (
     <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-10">
       <div>
-        <div className="text-xs uppercase tracking-widest text-slate-400">
-          UNO Clone
+        <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+          Chill Coding Lounge
         </div>
-        <div className="text-3xl font-semibold">Online Lobby</div>
+        <div className="text-3xl font-semibold">Chillno Online Lobby</div>
         <div className="text-xs text-slate-500">
           Status: {connected ? "Connected" : "Connecting..."}
         </div>
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
-        <div className="text-slate-400">Your Name</div>
+        <div className="text-slate-400">Your Name (Required)</div>
         <input
           className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
-          placeholder="Guest"
+          placeholder="Pick a name"
           value={name}
-          onChange={(event) => setName(event.target.value)}
+          onChange={(event) => {
+            setName(event.target.value);
+            setError(null);
+          }}
         />
+        {!nameReady && (
+          <div className="mt-2 text-xs text-amber-200">
+            Please enter a name to join a room.
+          </div>
+        )}
         <div className="mt-4 flex items-center gap-2">
           <button
             className={`rounded-md px-3 py-2 text-sm ${
@@ -267,7 +276,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
               <button
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                 onClick={handleJoinLobby}
-                disabled={!connected || queueSize !== null}
+                disabled={!connected || queueSize !== null || !nameReady}
               >
                 Join Lobby
               </button>
@@ -304,14 +313,14 @@ export default function Online({ onBack }: { onBack: () => void }) {
               <button
                 className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                 onClick={handleCreatePrivate}
-                disabled={!connected}
+                disabled={!connected || !nameReady}
               >
                 Create Private Room
               </button>
               <button
                 className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700 disabled:opacity-50"
                 onClick={handleJoinPrivate}
-                disabled={!connected || !privateCode.trim()}
+                disabled={!connected || !privateCode.trim() || !nameReady}
               >
                 Join Room
               </button>

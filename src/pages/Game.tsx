@@ -888,10 +888,10 @@ export default function Game({ onBack }: { onBack: () => void }) {
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 pb-28 lg:py-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="text-xs uppercase tracking-widest text-slate-400">
-            UNO Clone
+          <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+            Chill Coding Lounge
           </div>
-          <div className="text-2xl font-semibold">Table</div>
+          <div className="text-2xl font-semibold">Chillno Table</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button

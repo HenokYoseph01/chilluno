@@ -12,11 +12,11 @@ export default function Rules({
   return (
     <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
       <div>
-        <div className="text-xs uppercase tracking-widest text-slate-400">
-          UNO Clone
+        <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+          Chill Coding Lounge
         </div>
         <div className="text-3xl font-semibold">
-          {mode === "ai" ? "Rules: vs AI" : "Rules: vs People"}
+          {mode === "ai" ? "Chillno Rules: vs AI" : "Chillno Rules: vs People"}
         </div>
       </div>
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
