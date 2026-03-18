@@ -65,6 +65,10 @@ type ServerMessage =
 
 type PublicState = {
   roomId: string;
+  roomCode: string | null;
+  roomSize: number;
+  isPrivate: boolean;
+  status: "lobby" | "playing" | "finished";
   players: {
     id: PlayerId;
     name: string;
@@ -73,34 +77,39 @@ type PublicState = {
     unoCalled: boolean;
     disconnected: boolean;
   }[];
-  currentPlayerId: PlayerId;
-  direction: 1 | -1;
-  pendingDraw2: number;
-  pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
-  pendingMiniGame:
-    | {
-        type: "rps";
-        throwerId: PlayerId;
-        targetId: PlayerId;
-        chosenColor: "red" | "yellow" | "green" | "blue" | null;
-        throwerChosen: boolean;
-        targetChosen: boolean;
-      }
-    | {
-        type: "coin";
-        throwerId: PlayerId;
-        targetId: PlayerId;
-        chosenColor: "red" | "yellow" | "green" | "blue" | null;
-        throwerChosen: boolean;
-      }
-    | null;
-  winnerId: PlayerId | null;
-  discardTop: DeckCard;
-  history: (
-    | { id: number; type: "card"; card: DeckCard; playerId: PlayerId }
-    | { id: number; type: "event"; text: string }
-  )[];
-};
+} & (
+  | { status: "lobby" }
+  | {
+      status: "playing" | "finished";
+      currentPlayerId: PlayerId;
+      direction: 1 | -1;
+      pendingDraw2: number;
+      pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
+      pendingMiniGame:
+        | {
+            type: "rps";
+            throwerId: PlayerId;
+            targetId: PlayerId;
+            chosenColor: "red" | "yellow" | "green" | "blue" | null;
+            throwerChosen: boolean;
+            targetChosen: boolean;
+          }
+        | {
+            type: "coin";
+            throwerId: PlayerId;
+            targetId: PlayerId;
+            chosenColor: "red" | "yellow" | "green" | "blue" | null;
+            throwerChosen: boolean;
+          }
+        | null;
+      winnerId: PlayerId | null;
+      discardTop: DeckCard;
+      history: (
+        | { id: number; type: "card"; card: DeckCard; playerId: PlayerId }
+        | { id: number; type: "event"; text: string }
+      )[];
+    }
+);
 
 type ClientInfo = {
   id: PlayerId;
@@ -115,6 +124,7 @@ const wss = new WebSocketServer({ port: PORT });
 const clients = new Map<WebSocket, ClientInfo>();
 const rooms = new Map<string, Room>();
 const queues: Record<2 | 3 | 4, PlayerId[]> = { 2: [], 3: [], 4: [] };
+const roomCodes = new Map<string, string>();
 
 function send(ws: WebSocket, message: ServerMessage) {
   if (ws.readyState === ws.OPEN) {
@@ -143,6 +153,24 @@ function broadcastLobbyState() {
 }
 
 function buildPublicState(room: Room): PublicState {
+  if (room.status === "lobby") {
+    return {
+      roomId: room.id,
+      roomCode: room.code,
+      roomSize: room.size,
+      isPrivate: room.isPrivate,
+      status: room.status,
+      players: room.players.map((player) => ({
+        id: player.id,
+        name: player.name,
+        handCount: room.state.hands[player.id]?.length ?? 0,
+        unoWindow: room.state.unoWindow[player.id]?.open ?? false,
+        unoCalled: room.state.unoCalled[player.id] ?? true,
+        disconnected: !player.connected,
+      })),
+    };
+  }
+
   const top = room.state.discardPile[room.state.discardPile.length - 1];
   const pending = room.state.pendingMiniGame;
   const pendingMiniGame: PublicState["pendingMiniGame"] =
@@ -167,6 +195,10 @@ function buildPublicState(room: Room): PublicState {
 
   return {
     roomId: room.id,
+    roomCode: room.code,
+    roomSize: room.size,
+    isPrivate: room.isPrivate,
+    status: room.status,
     players: room.players.map((player) => ({
       id: player.id,
       name: player.name,
@@ -199,6 +231,9 @@ function pushRoomState(room: Room) {
 }
 
 function closeRoom(room: Room, reason: string) {
+  if (room.code) {
+    roomCodes.delete(room.code);
+  }
   for (const player of room.players) {
     const client = [...clients.values()].find((c) => c.id === player.id);
     if (client) {
@@ -237,6 +272,8 @@ function tryCreateRoom(size: 2 | 3 | 4) {
   });
   const room: Room = {
     id: roomId,
+    code: null,
+    isPrivate: false,
     size,
     players: roomPlayers,
     state: {
@@ -278,6 +315,59 @@ function tryCreateRoom(size: 2 | 3 | 4) {
     }
   }
   broadcastLobbyState();
+}
+
+function generateRoomCode() {
+  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let code = "";
+  for (let i = 0; i < 6; i += 1) {
+    code += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return code;
+}
+
+function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
+  let code = generateRoomCode();
+  while (roomCodes.has(code)) {
+    code = generateRoomCode();
+  }
+  const roomId = randomUUID();
+  const room: Room = {
+    id: roomId,
+    code,
+    isPrivate: true,
+    size,
+    players: [
+      { id: host.id, name: host.name, connected: true, hand: [] },
+    ],
+    state: {
+      deck: [],
+      discardPile: [],
+      hands: { [host.id]: [] },
+      history: [],
+      historyCounter: 0,
+      currentPlayerIndex: 0,
+      direction: 1,
+      pendingWild: null,
+      pendingDraw2: 0,
+      pendingMiniGame: null,
+      winnerId: null,
+      unoCalled: { [host.id]: true },
+      unoWindow: { [host.id]: { open: false, token: 0 } },
+    },
+    status: "lobby",
+  };
+  rooms.set(roomId, room);
+  roomCodes.set(code, roomId);
+  host.roomId = roomId;
+  host.queueSize = null;
+  send(host.ws, {
+    type: "room_joined",
+    roomId,
+    youId: host.id,
+    state: buildPublicState(room),
+    hand: [],
+  });
 }
 
 function withRoom(client: ClientInfo, handler: (room: Room) => void) {
@@ -340,12 +430,67 @@ wss.on("connection", (ws) => {
 
     if (message.type === "join_lobby") {
       removeFromQueues(client.id);
+      if (client.roomId) return;
       const size = message.desiredPlayers;
       queues[size].push(client.id);
       client.queueSize = size;
       send(ws, { type: "queue_joined", size, waiting: queues[size].length });
       tryCreateRoom(size);
       broadcastLobbyState();
+      return;
+    }
+
+    if (message.type === "create_private") {
+      removeFromQueues(client.id);
+      if (client.roomId) return;
+      createPrivateRoom(message.desiredPlayers, client);
+      broadcastLobbyState();
+      return;
+    }
+
+    if (message.type === "join_private") {
+      removeFromQueues(client.id);
+      const code = message.code.trim().toUpperCase();
+      const roomId = roomCodes.get(code);
+      if (!roomId) {
+        send(ws, { type: "error", message: "Room code not found." });
+        return;
+      }
+      const room = rooms.get(roomId);
+      if (!room) {
+        send(ws, { type: "error", message: "Room not found." });
+        return;
+      }
+      if (!room.isPrivate) {
+        send(ws, { type: "error", message: "Room is not private." });
+        return;
+      }
+      if (room.players.length >= room.size) {
+        send(ws, { type: "error", message: "Room is full." });
+        return;
+      }
+      room.players.push({
+        id: client.id,
+        name: client.name,
+        connected: true,
+        hand: [],
+      });
+      room.state.hands[client.id] = [];
+      room.state.unoCalled[client.id] = true;
+      room.state.unoWindow[client.id] = { open: false, token: 0 };
+      client.roomId = room.id;
+      send(ws, {
+        type: "room_joined",
+        roomId: room.id,
+        youId: client.id,
+        state: buildPublicState(room),
+        hand: [],
+      });
+      if (room.players.length === room.size) {
+        startRoom(room);
+      } else {
+        pushRoomState(room);
+      }
       return;
     }
 
@@ -363,6 +508,9 @@ wss.on("connection", (ws) => {
         delete room.state.unoCalled[client.id];
         delete room.state.unoWindow[client.id];
         if (room.players.length < 2) {
+          if (room.code) {
+            roomCodes.delete(room.code);
+          }
           closeRoom(room, "Room closed (not enough players).");
           return;
         }
@@ -382,6 +530,7 @@ wss.on("connection", (ws) => {
 
     if (message.type === "action") {
       withRoom(client, (room) => {
+        if (room.status !== "playing") return;
         if (room.state.winnerId) {
           send(ws, { type: "error", message: "Game is finished." });
           return;

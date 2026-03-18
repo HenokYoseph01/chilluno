@@ -15,6 +15,8 @@ export default function Online({ onBack }: { onBack: () => void }) {
   const [roomState, setRoomState] = useState<PublicState | null>(null);
   const [hand, setHand] = useState<deckOutline[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [privateCode, setPrivateCode] = useState("");
+  const [lobbyTab, setLobbyTab] = useState<"public" | "private">("public");
   const wsUrl = useMemo(
     () => import.meta.env.VITE_WS_URL ?? DEFAULT_WS_URL,
     [],
@@ -78,6 +80,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
       if (message.type === "room_closed") {
         setRoomState(null);
         setQueueSize(null);
+        setError(message.reason);
       }
       if (message.type === "error") {
         setError(message.message);
@@ -112,7 +115,28 @@ export default function Online({ onBack }: { onBack: () => void }) {
     setQueueSize(null);
   }
 
-  if (roomState && clientId) {
+  function handleCreatePrivate() {
+    if (!connected) return;
+    if (name.trim()) {
+      send({ type: "set_name", name });
+    } else {
+      send({ type: "hello" });
+    }
+    send({ type: "create_private", desiredPlayers });
+  }
+
+  function handleJoinPrivate() {
+    if (!connected) return;
+    if (!privateCode.trim()) return;
+    if (name.trim()) {
+      send({ type: "set_name", name });
+    } else {
+      send({ type: "hello" });
+    }
+    send({ type: "join_private", code: privateCode.trim() });
+  }
+
+  if (roomState && clientId && roomState.status !== "lobby") {
     return (
       <OnlineGame
         state={roomState}
@@ -124,6 +148,56 @@ export default function Online({ onBack }: { onBack: () => void }) {
           setRoomState(null);
         }}
       />
+    );
+  }
+
+  if (roomState && clientId && roomState.status === "lobby") {
+    return (
+      <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
+        <div>
+          <div className="text-xs uppercase tracking-widest text-slate-400">
+            UNO Clone
+          </div>
+          <div className="text-3xl font-semibold">Private Room</div>
+          <div className="text-xs text-slate-500">
+            Waiting for players...
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+          <div className="text-slate-400">Room Code</div>
+          <div className="mt-2 text-2xl font-semibold tracking-widest text-emerald-300">
+            {roomState.roomCode ?? "—"}
+          </div>
+          <div className="mt-3 text-xs text-slate-400">
+            Players: {roomState.players.length} / {roomState.roomSize}
+          </div>
+          <div className="mt-4 space-y-2 text-xs text-slate-300">
+            {roomState.players.map((player) => (
+              <div key={player.id}>
+                {player.name}
+                {player.id === clientId ? " (You)" : ""}
+              </div>
+            ))}
+          </div>
+          <div className="mt-4 flex items-center gap-2">
+            <button
+              className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+              onClick={() => {
+                send({ type: "leave_room" });
+                setRoomState(null);
+              }}
+            >
+              Leave Room
+            </button>
+            <button
+              className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+              onClick={onBack}
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -147,6 +221,29 @@ export default function Online({ onBack }: { onBack: () => void }) {
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
+        <div className="mt-4 flex items-center gap-2">
+          <button
+            className={`rounded-md px-3 py-2 text-sm ${
+              lobbyTab === "public"
+                ? "bg-emerald-600 text-white"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+            onClick={() => setLobbyTab("public")}
+          >
+            Public Lobby
+          </button>
+          <button
+            className={`rounded-md px-3 py-2 text-sm ${
+              lobbyTab === "private"
+                ? "bg-emerald-600 text-white"
+                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+            }`}
+            onClick={() => setLobbyTab("private")}
+          >
+            Private Room
+          </button>
+        </div>
+
         <div className="mt-4 text-slate-400">Preferred Room Size</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {[2, 3, 4].map((size) => (
@@ -163,32 +260,69 @@ export default function Online({ onBack }: { onBack: () => void }) {
             </button>
           ))}
         </div>
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <button
-            className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-            onClick={handleJoinLobby}
-            disabled={!connected || queueSize !== null}
-          >
-            Join Lobby
-          </button>
-          <button
-            className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700 disabled:opacity-50"
-            onClick={handleLeaveLobby}
-            disabled={queueSize === null}
-          >
-            Leave Queue
-          </button>
-          <button
-            className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
-            onClick={onBack}
-          >
-            Back
-          </button>
-        </div>
-        {queueSize !== null && (
-          <div className="mt-3 text-xs text-slate-400">
-            Waiting for {queueSize} player room to fill...
-          </div>
+
+        {lobbyTab === "public" ? (
+          <>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+                onClick={handleJoinLobby}
+                disabled={!connected || queueSize !== null}
+              >
+                Join Lobby
+              </button>
+              <button
+                className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700 disabled:opacity-50"
+                onClick={handleLeaveLobby}
+                disabled={queueSize === null}
+              >
+                Leave Queue
+              </button>
+              <button
+                className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+                onClick={onBack}
+              >
+                Back
+              </button>
+            </div>
+            {queueSize !== null && (
+              <div className="mt-3 text-xs text-slate-400">
+                Waiting for {queueSize} player room to fill...
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div className="mt-4 text-slate-400">Join With Code</div>
+            <input
+              className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm uppercase tracking-widest text-slate-100 focus:border-emerald-500 focus:outline-none"
+              placeholder="ROOMCODE"
+              value={privateCode}
+              onChange={(event) => setPrivateCode(event.target.value)}
+            />
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button
+                className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+                onClick={handleCreatePrivate}
+                disabled={!connected}
+              >
+                Create Private Room
+              </button>
+              <button
+                className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700 disabled:opacity-50"
+                onClick={handleJoinPrivate}
+                disabled={!connected || !privateCode.trim()}
+              >
+                Join Room
+              </button>
+              <button
+                className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+                onClick={onBack}
+              >
+                Back
+              </button>
+            </div>
+          </>
         )}
         {error && (
           <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
@@ -197,19 +331,21 @@ export default function Online({ onBack }: { onBack: () => void }) {
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
-        <div className="text-slate-400">Lobby Activity</div>
-        <div className="mt-3 space-y-2 text-xs text-slate-300">
-          {queues.map((queue) => (
-            <div key={queue.size}>
-              {queue.size}-player rooms: {queue.waiting} waiting
-            </div>
-          ))}
+      {lobbyTab === "public" && (
+        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+          <div className="text-slate-400">Lobby Activity</div>
+          <div className="mt-3 space-y-2 text-xs text-slate-300">
+            {queues.map((queue) => (
+              <div key={queue.size}>
+                {queue.size}-player rooms: {queue.waiting} waiting
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 text-xs text-slate-500">
+            Server URL: {wsUrl}
+          </div>
         </div>
-        <div className="mt-3 text-xs text-slate-500">
-          Server URL: {wsUrl}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

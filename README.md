@@ -89,3 +89,7 @@ npm run dev
 ```
 
 The client connects to `ws://localhost:8787` by default. To change this, set `VITE_WS_URL` in your environment.
+
+### Private Rooms
+
+Use the Online lobby to create a private room and share the generated code. Friends can join using the code.

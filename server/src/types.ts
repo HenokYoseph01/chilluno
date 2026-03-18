@@ -97,6 +97,8 @@ export interface PlayerState {
 
 export interface Room {
   id: string;
+  code: string | null;
+  isPrivate: boolean;
   size: number;
   players: PlayerState[];
   state: GameState;

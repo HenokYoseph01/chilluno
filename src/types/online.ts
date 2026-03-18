@@ -33,19 +33,35 @@ export type PublicPendingMiniGame =
 
 export type PublicState = {
   roomId: string;
+  roomCode: string | null;
+  roomSize: number;
+  isPrivate: boolean;
+  status: "lobby" | "playing" | "finished";
   players: PublicPlayer[];
-  currentPlayerId: PlayerId;
-  direction: 1 | -1;
-  pendingDraw2: number;
-  pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
-  pendingMiniGame: PublicPendingMiniGame;
-  winnerId: PlayerId | null;
-  discardTop: deckOutline;
-  history: (
-    | { id: number; type: "card"; card: deckOutline; playerId: PlayerId }
-    | { id: number; type: "event"; text: string }
-  )[];
-};
+} & (
+  | {
+      status: "lobby";
+    }
+  | {
+      status: "playing" | "finished";
+      currentPlayerId: PlayerId;
+      direction: 1 | -1;
+      pendingDraw2: number;
+      pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
+      pendingMiniGame: PublicPendingMiniGame;
+      winnerId: PlayerId | null;
+      discardTop: deckOutline;
+      history: (
+        | { id: number; type: "card"; card: deckOutline; playerId: PlayerId }
+        | { id: number; type: "event"; text: string }
+      )[];
+    }
+);
+
+export type ActivePublicState = Extract<
+  PublicState,
+  { status: "playing" | "finished" }
+>;
 
 export type ServerMessage =
   | { type: "connected"; id: PlayerId; name: string }
@@ -66,6 +82,8 @@ export type ClientMessage =
   | { type: "hello"; name?: string }
   | { type: "set_name"; name: string }
   | { type: "join_lobby"; desiredPlayers: 2 | 3 | 4 }
+  | { type: "create_private"; desiredPlayers: 2 | 3 | 4 }
+  | { type: "join_private"; code: string }
   | { type: "leave_lobby" }
   | { type: "leave_room" }
   | {

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
 import type { deckOutline } from "../types/cards";
-import type { ClientMessage, PublicState } from "../types/online";
+import type { ActivePublicState, ClientMessage } from "../types/online";
 
 const COLORS = ["red", "yellow", "green", "blue"] as const;
 
@@ -27,7 +27,7 @@ function isPlayableForTurn(
   return isPlayable(card, top);
 }
 
-function playerLabel(state: PublicState, id: string) {
+function playerLabel(state: ActivePublicState, id: string) {
   return state.players.find((player) => player.id === id)?.name ?? "Player";
 }
 
@@ -38,7 +38,7 @@ export default function OnlineGame({
   send,
   onLeave,
 }: {
-  state: PublicState;
+  state: ActivePublicState;
   hand: deckOutline[];
   youId: string;
   send: (message: ClientMessage) => void;
@@ -69,7 +69,12 @@ export default function OnlineGame({
             UNO Clone
           </div>
           <div className="text-2xl font-semibold">Online Room</div>
-          <div className="text-xs text-slate-500">Room ID: {state.roomId}</div>
+          <div className="text-xs text-slate-500">
+            Room ID: {state.roomId}
+            {state.isPrivate && state.roomCode
+              ? ` · Code: ${state.roomCode}`
+              : ""}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
           <div>Turn: {playerLabel(state, state.currentPlayerId)}</div>
@@ -112,7 +117,7 @@ export default function OnlineGame({
                   <div className="text-sm text-slate-100">
                     {player.name}
                     {player.id === youId ? " (You)" : ""}
-                    {player.disconnected ? " — Disconnected" : ""}
+                    {player.disconnected ? " â€” Disconnected" : ""}
                   </div>
                   <div className="text-xs text-slate-400">
                     Cards: {player.handCount}
@@ -120,7 +125,7 @@ export default function OnlineGame({
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
                   <div>
-                    UNO: {player.unoWindow ? (player.unoCalled ? "Called" : "Open") : "—"}
+                    UNO: {player.unoWindow ? (player.unoCalled ? "Called" : "Open") : "â€”"}
                   </div>
                   {player.id !== youId &&
                     player.unoWindow &&
@@ -453,3 +458,5 @@ export default function OnlineGame({
     </div>
   );
 }
+
+
