@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import { generateDeck, shuffleArray } from "../game/deckEngine";
 import type { Color, deckOutline } from "../types/cards";
@@ -274,6 +275,9 @@ export default function Game({ onBack }: { onBack: () => void }) {
   const [showExitModal, setShowExitModal] = useState(false);
   const [rpsSelection, setRpsSelection] = useState<RpsChoice | null>(null);
   const [coinSelection, setCoinSelection] = useState<CoinChoice | null>(null);
+  const pileControls = useAnimation();
+  const lastHistoryIdRef = useRef<number | null>(null);
+  const lastWinnerRef = useRef<Player | null>(null);
   const unoBannerTimer = useRef<number | null>(null);
   const aiAutoUnoTimer = useRef<number | null>(null);
   const aiCallPlayerTimer = useRef<number | null>(null);
@@ -300,6 +304,31 @@ export default function Game({ onBack }: { onBack: () => void }) {
   const playerHasPlayable = playerHand.some((card) =>
     isPlayableForTurn(card, topCard, pendingDraw2),
   );
+
+  useEffect(() => {
+    const lastEntry = [...game.history]
+      .reverse()
+      .find((entry) => entry.type === "card");
+    const winnerChanged = winner && winner !== lastWinnerRef.current;
+
+    if (winnerChanged) {
+      pileControls.start("victory");
+      lastWinnerRef.current = winner;
+      return;
+    }
+
+    if (lastEntry && lastEntry.id !== lastHistoryIdRef.current) {
+      if (lastEntry.card.value === "Wild4") {
+        pileControls.start("slam");
+      } else if (
+        lastEntry.card.value === "Draw2" ||
+        lastEntry.card.value === "Skip"
+      ) {
+        pileControls.start("shake");
+      }
+      lastHistoryIdRef.current = lastEntry.id;
+    }
+  }, [game.history, pileControls, winner]);
 
   function resetGame() {
     setGame(initGame());
@@ -962,7 +991,42 @@ export default function Game({ onBack }: { onBack: () => void }) {
 
         <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
           <div className="text-sm text-slate-400">Discard</div>
-          <Card color={topCard.color} value={topCard.value} />
+          <motion.div
+            initial={false}
+            animate={pileControls}
+            variants={{
+              slam: {
+                y: [-40, 0, 8, 0],
+                rotate: [-6, 0],
+                scale: [1.18, 1, 0.98, 1],
+                boxShadow: [
+                  "0 0 0 rgba(0,0,0,0)",
+                  "0 0 26px rgba(245,158,11,0.65)",
+                ],
+                transition: { duration: 0.45 },
+              },
+              shake: {
+                x: [0, -4, 4, -3, 3, 0],
+                boxShadow: [
+                  "0 0 0 rgba(0,0,0,0)",
+                  "0 0 22px rgba(16,185,129,0.55)",
+                  "0 0 0 rgba(0,0,0,0)",
+                ],
+                transition: { duration: 0.35 },
+              },
+              victory: {
+                scale: [1, 1.08, 1],
+                boxShadow: [
+                  "0 0 0 rgba(0,0,0,0)",
+                  "0 0 30px rgba(59,130,246,0.65)",
+                  "0 0 0 rgba(0,0,0,0)",
+                ],
+                transition: { duration: 0.6 },
+              },
+            }}
+          >
+            <Card color={topCard.color} value={topCard.value} />
+          </motion.div>
           <div className="text-xs text-slate-400">Deck: {deck.length} cards</div>
           <div className="text-xs text-slate-400">Turn: {currentPlayer}</div>
           {pendingDraw2 > 0 && (

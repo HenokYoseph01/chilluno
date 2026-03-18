@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
 import type { deckOutline } from "../types/cards";
@@ -48,6 +49,9 @@ export default function OnlineGame({
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
   const [coinSubmitted, setCoinSubmitted] = useState(false);
+  const pileControls = useAnimation();
+  const lastHistoryIdRef = useRef<number | null>(null);
+  const lastWinnerRef = useRef<string | null>(null);
 
   const topCard = useMemo(() => state.discardTop, [state.discardTop]);
   const you = state.players.find((player) => player.id === youId);
@@ -64,6 +68,31 @@ export default function OnlineGame({
     }
     return null;
   }, [state.history]);
+  useEffect(() => {
+    const lastEntry = [...state.history]
+      .reverse()
+      .find((entry) => entry.type === "card");
+    const winnerChanged =
+      state.winnerId && state.winnerId !== lastWinnerRef.current;
+
+    if (winnerChanged) {
+      pileControls.start("victory");
+      lastWinnerRef.current = state.winnerId;
+      return;
+    }
+
+    if (lastEntry && lastEntry.id !== lastHistoryIdRef.current) {
+      if (lastEntry.card.value === "Wild4") {
+        pileControls.start("slam");
+      } else if (
+        lastEntry.card.value === "Draw2" ||
+        lastEntry.card.value === "Skip"
+      ) {
+        pileControls.start("shake");
+      }
+      lastHistoryIdRef.current = lastEntry.id;
+    }
+  }, [pileControls, state.history, state.winnerId]);
 
   useEffect(() => {
     setRpsSelection(null);
@@ -133,7 +162,7 @@ export default function OnlineGame({
                   <div className="text-sm text-slate-100">
                     {player.name}
                     {player.id === youId ? " (You)" : ""}
-                    {player.disconnected ? " â€” Disconnected" : ""}
+                    {player.disconnected ? " - Disconnected" : ""}
                   </div>
                   <div className="text-xs text-slate-400">
                     Cards: {player.handCount}
@@ -168,7 +197,42 @@ export default function OnlineGame({
           <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
             <div className="text-sm text-slate-400">Top of Discard</div>
             <div className="mt-3">
-              <Card color={topCard.color} value={topCard.value} />
+              <motion.div
+                initial={false}
+                animate={pileControls}
+                variants={{
+                  slam: {
+                    y: [-40, 0, 8, 0],
+                    rotate: [-6, 0],
+                    scale: [1.18, 1, 0.98, 1],
+                    boxShadow: [
+                      "0 0 0 rgba(0,0,0,0)",
+                      "0 0 26px rgba(245,158,11,0.65)",
+                    ],
+                    transition: { duration: 0.45 },
+                  },
+                  shake: {
+                    x: [0, -4, 4, -3, 3, 0],
+                    boxShadow: [
+                      "0 0 0 rgba(0,0,0,0)",
+                      "0 0 22px rgba(16,185,129,0.55)",
+                      "0 0 0 rgba(0,0,0,0)",
+                    ],
+                    transition: { duration: 0.35 },
+                  },
+                  victory: {
+                    scale: [1, 1.08, 1],
+                    boxShadow: [
+                      "0 0 0 rgba(0,0,0,0)",
+                      "0 0 30px rgba(59,130,246,0.65)",
+                      "0 0 0 rgba(0,0,0,0)",
+                    ],
+                    transition: { duration: 0.6 },
+                  },
+                }}
+              >
+                <Card color={topCard.color} value={topCard.value} />
+              </motion.div>
             </div>
           </div>
 
@@ -497,5 +561,14 @@ export default function OnlineGame({
     </div>
   );
 }
+
+
+
+
+
+
+
+
+
 
 
