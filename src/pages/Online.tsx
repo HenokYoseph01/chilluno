@@ -350,9 +350,6 @@ export default function Online({ onBack }: { onBack: () => void }) {
               </div>
             ))}
           </div>
-          <div className="mt-3 text-xs text-slate-500">
-            Server URL: {wsUrl}
-          </div>
         </div>
       )}
     </div>
