@@ -125,7 +125,7 @@ export default function OnlineGame({
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-slate-400">
                   <div>
-                    UNO: {player.unoWindow ? (player.unoCalled ? "Called" : "Open") : "â€”"}
+                    UNO: {player.unoWindow ? (player.unoCalled ? "Called" : "Open") : "N/A"}
                   </div>
                   {player.id !== youId &&
                     player.unoWindow &&
