@@ -8,7 +8,7 @@ import type {
   PlayerId,
   RpsChoice,
   Room,
-} from "./types";
+} from "./types.js";
 
 const COLORS: Color[] = ["red", "yellow", "green", "blue"];
 

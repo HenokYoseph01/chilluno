@@ -12,7 +12,7 @@ import {
   resolveCoin,
   resolveRps,
   updateUnoWindows,
-} from "./game";
+} from "./game.js";
 import type {
   CoinChoice,
   DeckCard,
@@ -20,12 +20,14 @@ import type {
   PlayerId,
   Room,
   RpsChoice,
-} from "./types";
+} from "./types.js";
 
 type ClientMessage =
   | { type: "hello"; name?: string }
   | { type: "set_name"; name: string }
   | { type: "join_lobby"; desiredPlayers: 2 | 3 | 4 }
+  | { type: "create_private"; desiredPlayers: 2 | 3 | 4 }
+  | { type: "join_private"; code: string }
   | { type: "leave_lobby" }
   | { type: "leave_room" }
   | {
@@ -85,23 +87,7 @@ type PublicState = {
       direction: 1 | -1;
       pendingDraw2: number;
       pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
-      pendingMiniGame:
-        | {
-            type: "rps";
-            throwerId: PlayerId;
-            targetId: PlayerId;
-            chosenColor: "red" | "yellow" | "green" | "blue" | null;
-            throwerChosen: boolean;
-            targetChosen: boolean;
-          }
-        | {
-            type: "coin";
-            throwerId: PlayerId;
-            targetId: PlayerId;
-            chosenColor: "red" | "yellow" | "green" | "blue" | null;
-            throwerChosen: boolean;
-          }
-        | null;
+      pendingMiniGame: PublicPendingMiniGame;
       winnerId: PlayerId | null;
       discardTop: DeckCard;
       history: (
@@ -110,6 +96,24 @@ type PublicState = {
       )[];
     }
 );
+
+type PublicPendingMiniGame =
+  | {
+      type: "rps";
+      throwerId: PlayerId;
+      targetId: PlayerId;
+      chosenColor: "red" | "yellow" | "green" | "blue" | null;
+      throwerChosen: boolean;
+      targetChosen: boolean;
+    }
+  | {
+      type: "coin";
+      throwerId: PlayerId;
+      targetId: PlayerId;
+      chosenColor: "red" | "yellow" | "green" | "blue" | null;
+      throwerChosen: boolean;
+    }
+  | null;
 
 type ClientInfo = {
   id: PlayerId;
@@ -231,7 +235,7 @@ function buildPublicState(room: Room): PublicState {
 
   const top = room.state.discardPile[room.state.discardPile.length - 1];
   const pending = room.state.pendingMiniGame;
-  const pendingMiniGame: PublicState["pendingMiniGame"] =
+  const pendingMiniGame: PublicPendingMiniGame =
     pending?.type === "rps"
       ? {
           type: "rps",
@@ -454,7 +458,7 @@ function applyPendingResolution(room: Room, pending: PendingMiniGame) {
   room.state = updateUnoWindows(room, room.state);
 }
 
-wss.on("connection", (ws) => {
+wss.on("connection", (ws: WebSocket) => {
   const id = randomUUID();
   const client: ClientInfo = {
     id,
@@ -468,7 +472,7 @@ wss.on("connection", (ws) => {
   send(ws, { type: "connected", id, name: client.name });
   broadcastLobbyState();
 
-  ws.on("message", (data) => {
+  ws.on("message", (data: WebSocket.RawData) => {
     let message: ClientMessage;
     try {
       message = JSON.parse(data.toString());
