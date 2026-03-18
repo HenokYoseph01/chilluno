@@ -49,6 +49,7 @@ export default function OnlineGame({
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
   const [coinSubmitted, setCoinSubmitted] = useState(false);
+  const [showRules, setShowRules] = useState(true);
   const pileControls = useAnimation();
   const lastHistoryIdRef = useRef<number | null>(null);
   const lastWinnerRef = useRef<string | null>(null);
@@ -141,6 +142,13 @@ export default function OnlineGame({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+        <div className="lg:col-span-2">
+          <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200 shadow-lg shadow-emerald-500/10 animate-pulse">
+            {isYourTurn
+              ? "Your Turn — make it count."
+              : `${playerLabel(state, state.currentPlayerId)}'s Turn`}
+          </div>
+        </div>
         {lastEvent && (
           <div className="lg:col-span-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
             {lastEvent}
@@ -236,7 +244,13 @@ export default function OnlineGame({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+          <div
+            className={`rounded-xl border bg-slate-900/60 p-4 ${
+              isYourTurn
+                ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
+                : "border-slate-800"
+            }`}
+          >
             <div className="text-sm text-slate-400">Your Hand</div>
             <div className="text-xs text-slate-500">Cards: {hand.length}</div>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -400,9 +414,10 @@ export default function OnlineGame({
                     rpsSelection === choice
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-800 hover:bg-slate-700"
-                  }`}
+                  } disabled:opacity-50`}
                   onClick={() => setRpsSelection(choice)}
                   disabled={
+                    !pendingMiniGame.chosenColor ||
                     pendingMiniGame.throwerId !== youId &&
                     pendingMiniGame.targetId !== youId
                   }
@@ -425,6 +440,7 @@ export default function OnlineGame({
                 }}
                 disabled={
                   rpsSubmitted ||
+                  !pendingMiniGame.chosenColor ||
                   !rpsSelection ||
                   (pendingMiniGame.throwerId !== youId &&
                     pendingMiniGame.targetId !== youId)
@@ -494,9 +510,12 @@ export default function OnlineGame({
                     coinSelection === choice
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-800 hover:bg-slate-700"
-                  }`}
+                  } disabled:opacity-50`}
                   onClick={() => setCoinSelection(choice)}
-                  disabled={pendingMiniGame.throwerId !== youId}
+                  disabled={
+                    pendingMiniGame.throwerId !== youId ||
+                    !pendingMiniGame.chosenColor
+                  }
                 >
                   {choice}
                 </button>
@@ -517,6 +536,7 @@ export default function OnlineGame({
                 disabled={
                   coinSubmitted ||
                   !coinSelection ||
+                  !pendingMiniGame.chosenColor ||
                   pendingMiniGame.throwerId !== youId
                 }
               >
@@ -558,6 +578,34 @@ export default function OnlineGame({
             ))}
         </div>
       </details>
+
+      {showRules && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-emerald-400/40 bg-slate-950 p-6 text-sm text-slate-200 shadow-2xl shadow-emerald-500/10">
+            <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+              Chillno Rules
+            </div>
+            <div className="mt-2 text-xl font-semibold text-slate-100">
+              Quick Play Guide
+            </div>
+            <div className="mt-3 space-y-2 text-slate-300">
+              <div>- Match by color or value.</div>
+              <div>- Wild / Wild4 can be played anytime and set a color.</div>
+              <div>- Draw2 stacks; if it ends, next player draws the total.</div>
+              <div>- Skip skips the next player. Reverse flips direction.</div>
+              <div>- RPS: thrower and target choose. Loser draws 4.</div>
+              <div>- HT: thrower picks heads/tails. Loser draws 3.</div>
+              <div>- Call UNO when you hit 1 card, or draw 2.</div>
+            </div>
+            <button
+              className="mt-5 w-full rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+              onClick={() => setShowRules(false)}
+            >
+              Got It — Let’s Play
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

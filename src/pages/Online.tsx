@@ -212,6 +212,12 @@ export default function Online({ onBack }: { onBack: () => void }) {
         <div className="text-xs text-slate-500">
           Status: {connected ? "Connected" : "Connecting..."}
         </div>
+        <button
+          className="mt-3 rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
+          onClick={onBack}
+        >
+          Back
+        </button>
       </div>
 
       <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">

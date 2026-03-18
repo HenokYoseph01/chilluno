@@ -1,4 +1,4 @@
-type RulesMode = "ai" | "people";
+﻿type RulesMode = "ai" | "people";
 
 export default function Rules({
   mode,
@@ -29,12 +29,12 @@ export default function Rules({
           <div>- Draw2: next player can stack another Draw2.</div>
           <div>- If a Draw2 stack ends, the next player draws the stack total.</div>
           <div>- Wild4: next player draws 4 and is skipped.</div>
-          <div>- If you can’t play, draw one. If playable, you may play it.</div>
+          <div>- If you can't play, draw one. If playable, you may play it.</div>
         </div>
         <div className="mt-4 font-semibold">UNO Call</div>
         <div className="mt-2 space-y-2 text-slate-300">
           <div>- When you have 1 card, you must press UNO.</div>
-          <div>- If you don’t, the opponent can call UNO on you and you draw 2.</div>
+          <div>- If you don't, the opponent can call UNO on you and you draw 2.</div>
         </div>
         <div className="mt-4 font-semibold">Special Cards</div>
         <div className="mt-2 space-y-2 text-slate-300">
@@ -55,22 +55,16 @@ export default function Rules({
         >
           Back
         </button>
-        {mode === "ai" ? (
+        {mode === "ai" && (
           <button
             className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500"
             onClick={onStartAI}
           >
             Start vs AI
           </button>
-        ) : (
-          <button
-            className="rounded-md bg-slate-800 px-3 py-2 text-sm text-slate-300"
-            disabled
-          >
-            Start vs People (Soon)
-          </button>
         )}
       </div>
     </div>
   );
 }
+

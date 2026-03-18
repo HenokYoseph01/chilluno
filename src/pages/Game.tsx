@@ -976,7 +976,20 @@ export default function Game({ onBack }: { onBack: () => void }) {
       </div>
 
       <div className="mt-4 grid flex-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div className="lg:col-span-3">
+          <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200 shadow-lg shadow-emerald-500/10 animate-pulse">
+            {currentPlayer === "player"
+              ? "Your Turn — make it count."
+              : "AI Turn"}
+          </div>
+        </div>
+        <div
+          className={`rounded-xl border bg-slate-900/60 p-4 ${
+            currentPlayer === "ai"
+              ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
+              : "border-slate-800"
+          }`}
+        >
           <div className="text-sm text-slate-400">AI</div>
           <div className="text-xs text-slate-500">Cards: {aiHand.length}</div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1041,7 +1054,13 @@ export default function Game({ onBack }: { onBack: () => void }) {
           )}
         </div>
 
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <div
+          className={`rounded-xl border bg-slate-900/60 p-4 ${
+            currentPlayer === "player"
+              ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
+              : "border-slate-800"
+          }`}
+        >
           <div className="text-sm text-slate-400">You</div>
           <div className="text-xs text-slate-500">Cards: {playerHand.length}</div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -1148,8 +1167,9 @@ export default function Game({ onBack }: { onBack: () => void }) {
                     rpsSelection === choice
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-800 hover:bg-slate-700"
-                  }`}
+                  } disabled:opacity-50`}
                   onClick={() => setRpsSelection(choice)}
+                  disabled={!pendingMiniGame?.chosenColor}
                 >
                   {choice}
                 </button>
@@ -1234,9 +1254,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
                     coinSelection === choice
                       ? "bg-emerald-600 text-white"
                       : "bg-slate-800 hover:bg-slate-700"
-                  }`}
+                  } disabled:opacity-50`}
                   onClick={() => setCoinSelection(choice)}
-                  disabled={pendingMiniGame.player !== "player"}
+                  disabled={
+                    pendingMiniGame.player !== "player" ||
+                    !pendingMiniGame?.chosenColor
+                  }
                 >
                   {choice}
                 </button>
