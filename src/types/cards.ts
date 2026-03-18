@@ -16,7 +16,7 @@ export type CardValue =
   | "Wild"
   | "Wild4"
   | "RPS"
-  | "HeadsTails";
+  | "HT";
 
 export interface deckOutline {
   color: Color;

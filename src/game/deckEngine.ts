@@ -25,7 +25,7 @@ export const generateDeck = (): deckOutline[] => {
   }
   for (let i = 0; i < 4; i += 1) {
     deck.push({ color: "wild", value: "RPS" });
-    deck.push({ color: "wild", value: "HeadsTails" });
+    deck.push({ color: "wild", value: "HT" });
   }
 
   return shuffleArray(deck);

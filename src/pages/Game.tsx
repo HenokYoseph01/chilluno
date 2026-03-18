@@ -32,8 +32,8 @@ interface GameState {
   pendingWild: { player: Player; value: WildValue } | null;
   pendingDraw2: number;
   pendingMiniGame:
-    | { type: "rps"; player: Player }
-    | { type: "coin"; player: Player }
+    | { type: "rps"; player: Player; chosenColor: Color | null }
+    | { type: "coin"; player: Player; chosenColor: Color | null }
     | null;
   unoCalled: { player: boolean; ai: boolean };
   actionNonce: number;
@@ -87,7 +87,7 @@ function isPlayable(card: deckOutline, top: deckOutline): boolean {
   if (card.color === "wild" || card.value === "Wild" || card.value === "Wild4") {
     return true;
   }
-  if (card.value === "RPS" || card.value === "HeadsTails") {
+  if (card.value === "RPS" || card.value === "HT") {
     return true;
   }
   return card.color === top.color || card.value === top.value;
@@ -363,14 +363,14 @@ export default function Game({ onBack }: { onBack: () => void }) {
         aiHand: player === "ai" ? nextHand : prev.aiHand,
       };
 
-      if (card.value === "RPS" || card.value === "HeadsTails") {
+      if (card.value === "RPS" || card.value === "HT") {
         let miniState: GameState = {
           ...nextState,
           discardPile: [...prev.discardPile, { card, player }],
           pendingMiniGame:
             card.value === "RPS"
-              ? { type: "rps", player }
-              : { type: "coin", player },
+              ? { type: "rps", player, chosenColor: null }
+              : { type: "coin", player, chosenColor: null },
         };
         miniState = addHistoryCard(miniState, card, player);
         return miniState;
@@ -475,8 +475,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
       if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "rps") {
         return prev;
       }
+      if (!prev.pendingMiniGame.chosenColor) {
+        return prev;
+      }
       const result = resolveRpsWinner(playerChoice, aiChoice);
       const thrower = prev.pendingMiniGame.player;
+      const colorToUse = prev.pendingMiniGame.chosenColor;
       if (result === "tie") {
         const nextState = addHistoryEvent(
           { ...prev, pendingMiniGame: null },
@@ -485,22 +489,26 @@ export default function Game({ onBack }: { onBack: () => void }) {
         showUnoBanner("RPS tie. No penalty.");
         return nextState;
       }
-      const winnerPlayer: Player = result;
-      if (winnerPlayer === thrower) {
-        const nextState = addHistoryEvent(
-          { ...prev, pendingMiniGame: null, winner: thrower },
-          "RPS win! Thrower wins the game.",
-        );
-        showUnoBanner("RPS win! Thrower wins the game.");
-        return nextState;
-      }
-      const loser: Player = winnerPlayer === "player" ? "ai" : "player";
+      const loser: Player = result === "player" ? "ai" : "player";
       let nextState = drawCards(prev, loser, 4);
       nextState = {
         ...nextState,
         pendingMiniGame: null,
         currentPlayer: thrower === "player" ? "ai" : "player",
         actionNonce: nextState.actionNonce + 1,
+      };
+      nextState = {
+        ...nextState,
+        discardPile: [
+          ...nextState.discardPile.slice(0, -1),
+          {
+            ...nextState.discardPile[nextState.discardPile.length - 1],
+            card: {
+              ...nextState.discardPile[nextState.discardPile.length - 1].card,
+              color: colorToUse,
+            },
+          },
+        ],
       };
       nextState = addHistoryEvent(
         nextState,
@@ -518,7 +526,11 @@ export default function Game({ onBack }: { onBack: () => void }) {
       if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "coin") {
         return prev;
       }
+      if (!prev.pendingMiniGame.chosenColor) {
+        return prev;
+      }
       const thrower = prev.pendingMiniGame.player;
+      const colorToUse = prev.pendingMiniGame.chosenColor;
       const throwerWon = choice === flip;
       const loser: Player = throwerWon
         ? thrower === "player"
@@ -531,6 +543,19 @@ export default function Game({ onBack }: { onBack: () => void }) {
         pendingMiniGame: null,
         currentPlayer: thrower === "player" ? "ai" : "player",
         actionNonce: nextState.actionNonce + 1,
+      };
+      nextState = {
+        ...nextState,
+        discardPile: [
+          ...nextState.discardPile.slice(0, -1),
+          {
+            ...nextState.discardPile[nextState.discardPile.length - 1],
+            card: {
+              ...nextState.discardPile[nextState.discardPile.length - 1].card,
+              color: colorToUse,
+            },
+          },
+        ],
       };
       nextState = addHistoryEvent(
         nextState,
@@ -610,6 +635,17 @@ export default function Game({ onBack }: { onBack: () => void }) {
                 ...nextState,
                 aiHand: updatedHand,
               };
+              if (drawn.value === "RPS" || drawn.value === "HT") {
+                nextState = addHistoryCard(nextState, drawn, "ai");
+                return {
+                  ...nextState,
+                  discardPile: [...nextState.discardPile, { card: drawn, player: "ai" }],
+                  pendingMiniGame:
+                    drawn.value === "RPS"
+                      ? { type: "rps", player: "ai", chosenColor: null }
+                      : { type: "coin", player: "ai", chosenColor: null },
+                };
+              }
               nextState = finishPlay(nextState, "ai", drawn, chosenColor);
               if (updatedHand.length === 0) {
                 nextState.winner = "ai";
@@ -632,6 +668,17 @@ export default function Game({ onBack }: { onBack: () => void }) {
           ...prev,
           aiHand: nextHand,
         };
+        if (card.value === "RPS" || card.value === "HT") {
+          nextState = addHistoryCard(nextState, card, "ai");
+          return {
+            ...nextState,
+            discardPile: [...prev.discardPile, { card, player: "ai" }],
+            pendingMiniGame:
+              card.value === "RPS"
+                ? { type: "rps", player: "ai", chosenColor: null }
+                : { type: "coin", player: "ai", chosenColor: null },
+          };
+        }
         if (card.value === "Wild" || card.value === "Wild4") {
           const chosenColor = pickBestColor(nextHand);
           nextState = finishPlay(nextState, "ai", card, chosenColor);
@@ -796,21 +843,52 @@ export default function Game({ onBack }: { onBack: () => void }) {
     if (pendingMiniGame.player !== "ai") return;
     const timer = setTimeout(() => {
       const aiChoice: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
+      setGame((prev) => {
+        if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "coin") {
+          return prev;
+        }
+        return {
+          ...prev,
+          pendingMiniGame: {
+            ...prev.pendingMiniGame,
+            chosenColor: pickBestColor(prev.aiHand),
+          },
+        };
+      });
       resolveCoin(aiChoice);
     }, 600);
     return () => clearTimeout(timer);
   }, [pendingMiniGame]);
 
+  useEffect(() => {
+    if (!pendingMiniGame || pendingMiniGame.type !== "rps") return;
+    if (pendingMiniGame.player !== "ai") return;
+    if (pendingMiniGame.chosenColor) return;
+    setGame((prev) => {
+      if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "rps") {
+        return prev;
+      }
+      if (prev.pendingMiniGame.chosenColor) return prev;
+      return {
+        ...prev,
+        pendingMiniGame: {
+          ...prev.pendingMiniGame,
+          chosenColor: pickBestColor(prev.aiHand),
+        },
+      };
+    });
+  }, [pendingMiniGame]);
+
   return (
-    <div className="mx-auto max-w-5xl px-4 py-8">
-      <div className="flex items-center justify-between gap-4">
+    <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 pb-28 lg:py-8">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
           <div className="text-xs uppercase tracking-widest text-slate-400">
             UNO Clone
           </div>
           <div className="text-2xl font-semibold">Table</div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
             onClick={resetGame}
@@ -829,8 +907,8 @@ export default function Game({ onBack }: { onBack: () => void }) {
             disabled={
               currentPlayer !== "player" ||
               !!winner ||
-              pendingWild ||
-              pendingMiniGame ||
+              !!pendingWild ||
+              !!pendingMiniGame ||
               playerHasPlayable
             }
           >
@@ -863,7 +941,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
         </div>
       </div>
 
-      <div className="mt-6 grid gap-6 md:grid-cols-[1fr_auto_1fr]">
+      <div className="mt-4 grid flex-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
         <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
           <div className="text-sm text-slate-400">AI</div>
           <div className="text-xs text-slate-500">Cards: {aiHand.length}</div>
@@ -877,16 +955,16 @@ export default function Game({ onBack }: { onBack: () => void }) {
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-4">
+        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
           <div className="text-sm text-slate-400">Discard</div>
           <Card color={topCard.color} value={topCard.value} />
           <div className="text-xs text-slate-400">Deck: {deck.length} cards</div>
-            <div className="text-xs text-slate-400">Turn: {currentPlayer}</div>
-            {pendingDraw2 > 0 && (
-              <div className="text-xs text-amber-300">
-                Pending Draw2 stack: {pendingDraw2}
-              </div>
-            )}
+          <div className="text-xs text-slate-400">Turn: {currentPlayer}</div>
+          {pendingDraw2 > 0 && (
+            <div className="text-xs text-amber-300">
+              Pending Draw2 stack: {pendingDraw2}
+            </div>
+          )}
           {winner && (
             <div className="rounded-full bg-amber-500/20 px-4 py-2 text-sm text-amber-300">
               Winner: {winner}
@@ -950,6 +1028,49 @@ export default function Game({ onBack }: { onBack: () => void }) {
             <div className="mt-2 text-slate-400">
               Choose your move. Winner decides the outcome.
             </div>
+            <div className="mt-4">
+              <div className="text-xs uppercase tracking-widest text-slate-500">
+                Choose color
+              </div>
+              <div className="mt-2 flex gap-2">
+                {COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() =>
+                      setGame((prev) => {
+                        if (
+                          !prev.pendingMiniGame ||
+                          prev.pendingMiniGame.type !== "rps"
+                        ) {
+                          return prev;
+                        }
+                        return {
+                          ...prev,
+                          pendingMiniGame: {
+                            ...prev.pendingMiniGame,
+                            chosenColor: color,
+                          },
+                        };
+                      })
+                    }
+                    disabled={pendingMiniGame.player !== "player"}
+                    className={`h-9 w-9 rounded-full ring-2 ${
+                      pendingMiniGame.chosenColor === color
+                        ? "ring-white"
+                        : "ring-slate-700"
+                    } ${
+                      color === "red"
+                        ? "bg-red-500"
+                        : color === "yellow"
+                          ? "bg-yellow-400"
+                          : color === "green"
+                            ? "bg-green-500"
+                            : "bg-blue-500"
+                    } ${pendingMiniGame.player !== "player" ? "opacity-50" : ""}`}
+                  />
+                ))}
+              </div>
+            </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               {(["rock", "paper", "scissors"] as const).map((choice) => (
                 <button
@@ -969,9 +1090,11 @@ export default function Game({ onBack }: { onBack: () => void }) {
               <button
                 className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                 onClick={() => {
-                  if (rpsSelection) resolveRps(rpsSelection);
+                  if (rpsSelection && pendingMiniGame?.chosenColor) {
+                    resolveRps(rpsSelection);
+                  }
                 }}
-                disabled={!rpsSelection}
+                disabled={!rpsSelection || !pendingMiniGame?.chosenColor}
               >
                 Play
               </button>
@@ -990,6 +1113,49 @@ export default function Game({ onBack }: { onBack: () => void }) {
               {pendingMiniGame.player === "player"
                 ? "Pick heads or tails."
                 : "AI is choosing a side."}
+            </div>
+            <div className="mt-4">
+              <div className="text-xs uppercase tracking-widest text-slate-500">
+                Choose color
+              </div>
+              <div className="mt-2 flex gap-2">
+                {COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() =>
+                      setGame((prev) => {
+                        if (
+                          !prev.pendingMiniGame ||
+                          prev.pendingMiniGame.type !== "coin"
+                        ) {
+                          return prev;
+                        }
+                        return {
+                          ...prev,
+                          pendingMiniGame: {
+                            ...prev.pendingMiniGame,
+                            chosenColor: color,
+                          },
+                        };
+                      })
+                    }
+                    disabled={pendingMiniGame.player !== "player"}
+                    className={`h-9 w-9 rounded-full ring-2 ${
+                      pendingMiniGame.chosenColor === color
+                        ? "ring-white"
+                        : "ring-slate-700"
+                    } ${
+                      color === "red"
+                        ? "bg-red-500"
+                        : color === "yellow"
+                          ? "bg-yellow-400"
+                          : color === "green"
+                            ? "bg-green-500"
+                            : "bg-blue-500"
+                    }`}
+                  />
+                ))}
+              </div>
             </div>
             <div className="mt-4 flex items-center justify-between gap-2">
               {(["heads", "tails"] as const).map((choice) => (
@@ -1012,9 +1178,11 @@ export default function Game({ onBack }: { onBack: () => void }) {
                 <button
                   className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                   onClick={() => {
-                    if (coinSelection) resolveCoin(coinSelection);
+                    if (coinSelection && pendingMiniGame?.chosenColor) {
+                      resolveCoin(coinSelection);
+                    }
                   }}
-                  disabled={!coinSelection}
+                  disabled={!coinSelection || !pendingMiniGame?.chosenColor}
                 >
                   Flip
                 </button>
@@ -1032,13 +1200,15 @@ export default function Game({ onBack }: { onBack: () => void }) {
       )}
 
       {unoBanner && (
-        <div className="mt-6 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
           {unoBanner}
         </div>
       )}
 
-      <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-        <div className="text-sm text-slate-400">Discard History</div>
+      <details className="mt-4 rounded-xl border border-slate-800 bg-slate-900/60 p-4">
+        <summary className="cursor-pointer text-sm text-slate-400">
+          Discard History
+        </summary>
         <div className="mt-3 max-h-48 space-y-2 overflow-auto text-xs text-slate-300">
           {[...game.history]
             .reverse()
@@ -1064,6 +1234,60 @@ export default function Game({ onBack }: { onBack: () => void }) {
                 )}
               </div>
             ))}
+        </div>
+      </details>
+
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-800 bg-slate-950/95 px-4 py-3 backdrop-blur lg:hidden">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-2">
+          <button
+            className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+            onClick={resetGame}
+          >
+            Restart
+          </button>
+          <button
+            className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+            onClick={() => setShowExitModal(true)}
+          >
+            Back
+          </button>
+          <button
+            className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+            onClick={() => drawCard("player")}
+            disabled={
+              currentPlayer !== "player" ||
+              !!winner ||
+              !!pendingWild ||
+              !!pendingMiniGame ||
+              playerHasPlayable
+            }
+          >
+            Draw
+          </button>
+          <button
+            className="rounded-md bg-amber-500 px-3 py-2 text-sm text-black hover:bg-amber-400 disabled:opacity-50"
+            onClick={() => {
+              if (unoWindow.player && !unoCalled.player) {
+                callUnoSelf("player");
+                notify("You called UNO!");
+              }
+            }}
+            disabled={!unoWindow.player || unoCalled.player}
+          >
+            UNO
+          </button>
+          <button
+            className="rounded-md bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600 disabled:opacity-50"
+            onClick={() => {
+              if (unoWindow.ai && !unoCalled.ai) {
+                callUnoOn("ai");
+                notify("UNO called on AI. It draws 2.");
+              }
+            }}
+            disabled={!unoWindow.ai || unoCalled.ai}
+          >
+            Call UNO (AI)
+          </button>
         </div>
       </div>
 
