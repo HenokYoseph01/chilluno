@@ -1,9 +1,10 @@
 import { useState } from "react";
 import Game from "./pages/Game";
 import Menu from "./pages/Menu";
+import Online from "./pages/Online";
 import Rules from "./pages/Rules";
 
-type Screen = "menu" | "rules_ai" | "rules_people" | "ai";
+type Screen = "menu" | "rules_ai" | "rules_people" | "ai" | "online";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("menu");
@@ -14,6 +15,7 @@ function App() {
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <Menu
           onSelectAI={() => setScreen("rules_ai")}
+          onSelectOnline={() => setScreen("online")}
           onSelectPeopleRules={() => setScreen("rules_people")}
         />
       </div>
@@ -39,6 +41,14 @@ function App() {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <Rules mode="people" onBack={() => setScreen("menu")} />
+      </div>
+    );
+  }
+
+  if (screen === "online") {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100">
+        <Online onBack={() => setScreen("menu")} />
       </div>
     );
   }

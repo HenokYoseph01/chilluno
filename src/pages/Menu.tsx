@@ -1,8 +1,10 @@
 export default function Menu({
   onSelectAI,
+  onSelectOnline,
   onSelectPeopleRules,
 }: {
   onSelectAI: () => void;
+  onSelectOnline: () => void;
   onSelectPeopleRules: () => void;
 }) {
   return (
@@ -21,9 +23,9 @@ export default function Menu({
         <div className="flex flex-col items-center gap-2 sm:items-stretch">
           <button
             className="rounded-md bg-slate-800 px-4 py-3 text-sm text-slate-300 hover:bg-slate-700"
-            disabled
+            onClick={onSelectOnline}
           >
-            Play vs People (Soon)
+            Play Online
           </button>
           <button
             className="rounded-md border border-slate-700 px-4 py-2 text-xs text-slate-300 hover:bg-slate-800"

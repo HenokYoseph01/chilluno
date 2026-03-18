@@ -1,0 +1,104 @@
+export type PlayerId = string;
+
+export type Color = "red" | "yellow" | "green" | "blue" | "wild";
+export type CardValue =
+  | 0
+  | 1
+  | 2
+  | 3
+  | 4
+  | 5
+  | 6
+  | 7
+  | 8
+  | 9
+  | "Skip"
+  | "Reverse"
+  | "Draw2"
+  | "Wild"
+  | "Wild4"
+  | "RPS"
+  | "HT";
+
+export interface DeckCard {
+  color: Color;
+  value: CardValue;
+}
+
+export type RpsChoice = "rock" | "paper" | "scissors";
+export type CoinChoice = "heads" | "tails";
+
+export interface HistoryCardEntry {
+  id: number;
+  type: "card";
+  card: DeckCard;
+  playerId: PlayerId;
+}
+
+export interface HistoryEventEntry {
+  id: number;
+  type: "event";
+  text: string;
+}
+
+export type HistoryEntry = HistoryCardEntry | HistoryEventEntry;
+
+export interface PendingWild {
+  playerId: PlayerId;
+  value: "Wild" | "Wild4";
+}
+
+export interface PendingRps {
+  type: "rps";
+  throwerId: PlayerId;
+  targetId: PlayerId;
+  chosenColor: Color | null;
+  throwerChoice: RpsChoice | null;
+  targetChoice: RpsChoice | null;
+}
+
+export interface PendingCoin {
+  type: "coin";
+  throwerId: PlayerId;
+  targetId: PlayerId;
+  chosenColor: Color | null;
+  throwerChoice: CoinChoice | null;
+}
+
+export type PendingMiniGame = PendingRps | PendingCoin;
+
+export interface UnoWindowState {
+  open: boolean;
+  token: number;
+}
+
+export interface GameState {
+  deck: DeckCard[];
+  discardPile: { card: DeckCard; playerId: PlayerId }[];
+  hands: Record<PlayerId, DeckCard[]>;
+  history: HistoryEntry[];
+  historyCounter: number;
+  currentPlayerIndex: number;
+  direction: 1 | -1;
+  pendingWild: PendingWild | null;
+  pendingDraw2: number;
+  pendingMiniGame: PendingMiniGame | null;
+  winnerId: PlayerId | null;
+  unoCalled: Record<PlayerId, boolean>;
+  unoWindow: Record<PlayerId, UnoWindowState>;
+}
+
+export interface PlayerState {
+  id: PlayerId;
+  name: string;
+  connected: boolean;
+  hand: DeckCard[];
+}
+
+export interface Room {
+  id: string;
+  size: number;
+  players: PlayerState[];
+  state: GameState;
+  status: "lobby" | "playing" | "finished";
+}

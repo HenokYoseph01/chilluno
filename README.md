@@ -71,3 +71,21 @@ export default defineConfig([
   },
 ])
 ```
+
+## Online Multiplayer (Local Dev)
+
+This project now includes a lightweight WebSocket server for online multiplayer.
+
+1. Start the server:
+
+```bash
+npm run server:dev
+```
+
+2. Start the client:
+
+```bash
+npm run dev
+```
+
+The client connects to `ws://localhost:8787` by default. To change this, set `VITE_WS_URL` in your environment.
