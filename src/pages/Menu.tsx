@@ -1,3 +1,6 @@
+import { useEffect, useState } from "react";
+import { motion } from "framer-motion";
+
 export default function Menu({
   onSelectAI,
   onSelectOnline,
@@ -7,8 +10,47 @@ export default function Menu({
   onSelectOnline: () => void;
   onSelectPeopleRules: () => void;
 }) {
+  const [showSplash, setShowSplash] = useState(true);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setShowSplash(false), 2200);
+    return () => window.clearTimeout(timer);
+  }, []);
+
   return (
     <div className="relative mx-auto flex min-h-screen max-w-4xl flex-col items-center justify-center gap-6 overflow-hidden px-4 text-center">
+      {showSplash && (
+        <motion.div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950 text-slate-100"
+          initial={{ opacity: 1 }}
+          animate={{ opacity: [1, 1, 0] }}
+          transition={{ duration: 2.4, times: [0, 0.85, 1] }}
+        >
+          <div className="flex flex-col items-center gap-4">
+            <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
+              Chill Coding Lounge
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {"CHILLNO".split("").map((letter, index) => (
+                <motion.div
+                  key={`${letter}-${index}`}
+                  className="flex h-14 w-10 items-center justify-center rounded-lg border-2 border-black/20 bg-gradient-to-br from-emerald-500 via-emerald-400 to-amber-300 text-lg font-black text-slate-950 shadow-lg shadow-emerald-500/30"
+                  initial={{ y: 14, opacity: 0, rotate: -6 }}
+                  animate={{ y: 0, opacity: 1, rotate: 0 }}
+                  transition={{
+                    delay: 0.15 + index * 0.06,
+                    type: "spring",
+                    stiffness: 260,
+                    damping: 18,
+                  }}
+                >
+                  {letter}
+                </motion.div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
       <div className="pointer-events-none absolute -top-10 right-10 h-40 w-40 rounded-full bg-emerald-500/20 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-12 left-10 h-56 w-56 rounded-full bg-amber-500/10 blur-3xl" />
       <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
