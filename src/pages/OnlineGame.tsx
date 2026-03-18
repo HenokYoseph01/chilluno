@@ -46,6 +46,8 @@ export default function OnlineGame({
 }) {
   const [rpsSelection, setRpsSelection] = useState<"rock" | "paper" | "scissors" | null>(null);
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
+  const [rpsSubmitted, setRpsSubmitted] = useState(false);
+  const [coinSubmitted, setCoinSubmitted] = useState(false);
 
   const topCard = useMemo(() => state.discardTop, [state.discardTop]);
   const you = state.players.find((player) => player.id === youId);
@@ -59,6 +61,8 @@ export default function OnlineGame({
   useEffect(() => {
     setRpsSelection(null);
     setCoinSelection(null);
+    setRpsSubmitted(false);
+    setCoinSubmitted(false);
   }, [pendingMiniGame?.type, pendingMiniGame?.throwerId, pendingMiniGame?.targetId]);
 
   return (
@@ -224,37 +228,41 @@ export default function OnlineGame({
       </div>
 
       {pendingWild && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-sm text-slate-400">Wild Color</div>
-          {pendingWild.playerId === youId ? (
-            <div className="mt-3 flex gap-2">
-              {COLORS.map((color) => (
-                <button
-                  key={color}
-                  onClick={() =>
-                    send({
-                      type: "action",
-                      action: { type: "choose_wild", color },
-                    })
-                  }
-                  className={`h-10 w-10 rounded-full ring-2 ring-slate-700 ${
-                    color === "red"
-                      ? "bg-red-500"
-                      : color === "yellow"
-                        ? "bg-yellow-400"
-                        : color === "green"
-                          ? "bg-green-500"
-                          : "bg-blue-500"
-                  }`}
-                />
-              ))}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
+          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+            <div className="text-base font-semibold text-slate-100">
+              Choose Wild Color
             </div>
-          ) : (
-            <div className="mt-2 text-sm text-slate-400">
-              Waiting for {playerLabel(state, pendingWild.playerId)} to choose a
-              color.
+            <div className="mt-2 text-slate-400">
+              {pendingWild.playerId === youId
+                ? "Select a color to continue."
+                : `Waiting for ${playerLabel(state, pendingWild.playerId)}.`}
             </div>
-          )}
+            {pendingWild.playerId === youId && (
+              <div className="mt-4 flex gap-2">
+                {COLORS.map((color) => (
+                  <button
+                    key={color}
+                    onClick={() =>
+                      send({
+                        type: "action",
+                        action: { type: "choose_wild", color },
+                      })
+                    }
+                    className={`h-10 w-10 rounded-full ring-2 ring-slate-700 ${
+                      color === "red"
+                        ? "bg-red-500"
+                        : color === "yellow"
+                          ? "bg-yellow-400"
+                          : color === "green"
+                            ? "bg-green-500"
+                            : "bg-blue-500"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -265,9 +273,15 @@ export default function OnlineGame({
               Rock, Paper, Scissors
             </div>
             <div className="mt-2 text-slate-400">
+              Battle: {playerLabel(state, pendingMiniGame.throwerId)} vs{" "}
+              {playerLabel(state, pendingMiniGame.targetId)}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
               {pendingMiniGame.throwerId === youId ||
               pendingMiniGame.targetId === youId
-                ? "Choose your move."
+                ? rpsSubmitted
+                  ? "Locked in. Waiting on the other player."
+                  : "Choose your move."
                 : "Waiting for players to choose."}
             </div>
             <div className="mt-4">
@@ -330,15 +344,17 @@ export default function OnlineGame({
                       type: "action",
                       action: { type: "rps_choice", choice: rpsSelection },
                     });
+                    setRpsSubmitted(true);
                   }
                 }}
                 disabled={
+                  rpsSubmitted ||
                   !rpsSelection ||
                   (pendingMiniGame.throwerId !== youId &&
                     pendingMiniGame.targetId !== youId)
                 }
               >
-                Lock In
+                {rpsSubmitted ? "Locked" : "Lock In"}
               </button>
             </div>
           </div>
@@ -352,8 +368,14 @@ export default function OnlineGame({
               Heads or Tails
             </div>
             <div className="mt-2 text-slate-400">
+              Battle: {playerLabel(state, pendingMiniGame.throwerId)} vs{" "}
+              {playerLabel(state, pendingMiniGame.targetId)}
+            </div>
+            <div className="mt-1 text-xs text-slate-500">
               {pendingMiniGame.throwerId === youId
-                ? "Pick heads or tails."
+                ? coinSubmitted
+                  ? "Locked in. Waiting for the flip."
+                  : "Pick heads or tails."
                 : "Waiting for the thrower."}
             </div>
             <div className="mt-4">
@@ -413,11 +435,16 @@ export default function OnlineGame({
                       type: "action",
                       action: { type: "coin_choice", choice: coinSelection },
                     });
+                    setCoinSubmitted(true);
                   }
                 }}
-                disabled={!coinSelection || pendingMiniGame.throwerId !== youId}
+                disabled={
+                  coinSubmitted ||
+                  !coinSelection ||
+                  pendingMiniGame.throwerId !== youId
+                }
               >
-                Flip
+                {coinSubmitted ? "Locked" : "Flip"}
               </button>
             </div>
           </div>

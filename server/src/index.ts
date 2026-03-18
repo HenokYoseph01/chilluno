@@ -125,6 +125,8 @@ const clients = new Map<WebSocket, ClientInfo>();
 const rooms = new Map<string, Room>();
 const queues: Record<2 | 3 | 4, PlayerId[]> = { 2: [], 3: [], 4: [] };
 const roomCodes = new Map<string, string>();
+const unoTimers = new Map<string, NodeJS.Timeout>();
+const UNO_WINDOW_MS = 5000;
 
 function send(ws: WebSocket, message: ServerMessage) {
   if (ws.readyState === ws.OPEN) {
@@ -134,6 +136,61 @@ function send(ws: WebSocket, message: ServerMessage) {
 
 function playerName(room: Room, id: PlayerId) {
   return room.players.find((p) => p.id === id)?.name ?? "Player";
+}
+
+function timerKey(roomId: string, playerId: PlayerId) {
+  return `${roomId}:${playerId}`;
+}
+
+function clearUnoTimer(roomId: string, playerId: PlayerId) {
+  const key = timerKey(roomId, playerId);
+  const timer = unoTimers.get(key);
+  if (timer) {
+    clearTimeout(timer);
+    unoTimers.delete(key);
+  }
+}
+
+function scheduleUnoTimer(room: Room, playerId: PlayerId) {
+  const key = timerKey(room.id, playerId);
+  if (unoTimers.has(key)) return;
+  const timer = setTimeout(() => {
+    const liveRoom = rooms.get(room.id);
+    if (!liveRoom) return;
+    const window = liveRoom.state.unoWindow[playerId];
+    if (!window || !window.open) return;
+    if (liveRoom.state.unoCalled[playerId]) return;
+    const hand = liveRoom.state.hands[playerId] ?? [];
+    if (hand.length !== 1) return;
+    liveRoom.state = drawCards(liveRoom.state, playerId, 2);
+    liveRoom.state = {
+      ...liveRoom.state,
+      unoCalled: { ...liveRoom.state.unoCalled, [playerId]: true },
+      unoWindow: {
+        ...liveRoom.state.unoWindow,
+        [playerId]: { ...liveRoom.state.unoWindow[playerId], open: false },
+      },
+    };
+    liveRoom.state = addHistoryEvent(
+      liveRoom.state,
+      `${playerName(liveRoom, playerId)} failed to call UNO and drew 2.`,
+    );
+    pushRoomState(liveRoom);
+    clearUnoTimer(liveRoom.id, playerId);
+  }, UNO_WINDOW_MS);
+  unoTimers.set(key, timer);
+}
+
+function syncUnoTimers(room: Room) {
+  for (const player of room.players) {
+    const open = room.state.unoWindow[player.id]?.open ?? false;
+    const called = room.state.unoCalled[player.id] ?? true;
+    if (open && !called) {
+      scheduleUnoTimer(room, player.id);
+    } else {
+      clearUnoTimer(room.id, player.id);
+    }
+  }
 }
 
 function broadcastLobbyState() {
@@ -219,6 +276,7 @@ function buildPublicState(room: Room): PublicState {
 }
 
 function pushRoomState(room: Room) {
+  syncUnoTimers(room);
   for (const player of room.players) {
     const client = [...clients.values()].find((c) => c.id === player.id);
     if (!client) continue;
@@ -233,6 +291,9 @@ function pushRoomState(room: Room) {
 function closeRoom(room: Room, reason: string) {
   if (room.code) {
     roomCodes.delete(room.code);
+  }
+  for (const player of room.players) {
+    clearUnoTimer(room.id, player.id);
   }
   for (const player of room.players) {
     const client = [...clients.values()].find((c) => c.id === player.id);
@@ -503,6 +564,7 @@ wss.on("connection", (ws) => {
 
     if (message.type === "leave_room") {
       withRoom(client, (room) => {
+        clearUnoTimer(room.id, client.id);
         room.players = room.players.filter((p) => p.id !== client.id);
         delete room.state.hands[client.id];
         delete room.state.unoCalled[client.id];
@@ -698,6 +760,7 @@ wss.on("connection", (ws) => {
             room.state,
             `${client.name} called UNO!`,
           );
+          clearUnoTimer(room.id, playerId);
           pushRoomState(room);
           return;
         }
@@ -720,6 +783,7 @@ wss.on("connection", (ws) => {
             room.state,
             `${client.name} called UNO on ${playerName(room, targetId)}.`,
           );
+          clearUnoTimer(room.id, targetId);
           room.state = updateUnoWindows(room, room.state);
           pushRoomState(room);
           return;
@@ -733,6 +797,7 @@ wss.on("connection", (ws) => {
     if (client.roomId) {
       const room = rooms.get(client.roomId);
       if (room) {
+        clearUnoTimer(room.id, client.id);
         const player = room.players.find((p) => p.id === client.id);
         if (player) {
           player.connected = false;
