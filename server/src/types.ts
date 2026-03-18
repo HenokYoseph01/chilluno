@@ -1,6 +1,7 @@
 export type PlayerId = string;
 
 export type Color = "red" | "yellow" | "green" | "blue" | "wild";
+export type NonWildColor = Exclude<Color, "wild">;
 export type CardValue =
   | 0
   | 1
@@ -52,7 +53,7 @@ export interface PendingRps {
   type: "rps";
   throwerId: PlayerId;
   targetId: PlayerId;
-  chosenColor: Color | null;
+  chosenColor: NonWildColor | null;
   throwerChoice: RpsChoice | null;
   targetChoice: RpsChoice | null;
 }
@@ -61,7 +62,7 @@ export interface PendingCoin {
   type: "coin";
   throwerId: PlayerId;
   targetId: PlayerId;
-  chosenColor: Color | null;
+  chosenColor: NonWildColor | null;
   throwerChoice: CoinChoice | null;
 }
 

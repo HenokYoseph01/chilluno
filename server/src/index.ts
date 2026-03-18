@@ -649,16 +649,17 @@ wss.on("connection", (ws: WebSocket) => {
         }
 
         if (message.action.type === "play") {
+          const action = message.action;
           if (!isTurn) return;
           if (room.state.pendingWild || room.state.pendingMiniGame) return;
           const hand = room.state.hands[playerId] ?? [];
-          const card = hand[message.action.index];
+          const card = hand[action.index];
           if (!card) return;
           const top = room.state.discardPile[room.state.discardPile.length - 1].card;
           if (!isPlayableForTurn(card, top, room.state.pendingDraw2)) return;
           if (room.state.pendingDraw2 > 0 && card.value !== "Draw2") return;
 
-          const nextHand = hand.filter((_, i) => i !== message.action.index);
+          const nextHand = hand.filter((_, i) => i !== action.index);
           room.state.hands[playerId] = nextHand;
 
           if (card.value === "RPS" || card.value === "HT") {
