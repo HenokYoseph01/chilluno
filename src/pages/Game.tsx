@@ -537,6 +537,14 @@ export default function Game({ onBack }: { onBack: () => void }) {
           ? "ai"
           : "player"
         : thrower;
+      const winner: Player = throwerWon ? thrower : loser === "player" ? "ai" : "player";
+      const pickedLabel =
+        choice === "heads" ? "Heads picked" : "Tails picked";
+      const landedLabel =
+        flip === "heads" ? "Heads landed" : "Tails landed";
+      const winnerLabel = winner === "player" ? "Player" : "AI";
+      const loserLabel = loser === "player" ? "player" : "ai";
+      const message = `${pickedLabel}, ${landedLabel}, ${winnerLabel} wins, ${loserLabel} draws 3.`;
       let nextState = drawCards(prev, loser, 3);
       nextState = {
         ...nextState,
@@ -557,11 +565,8 @@ export default function Game({ onBack }: { onBack: () => void }) {
           },
         ],
       };
-      nextState = addHistoryEvent(
-        nextState,
-        `Coin: ${choice} vs ${flip}. ${loser} draws 3.`,
-      );
-      showUnoBanner(`Coin: ${choice} vs ${flip}. ${loser} draws 3.`);
+      nextState = addHistoryEvent(nextState, message);
+      showUnoBanner(message);
       return nextState;
     });
     setCoinSelection(null);
