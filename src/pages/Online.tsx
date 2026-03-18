@@ -20,23 +20,35 @@ export default function Online({ onBack }: { onBack: () => void }) {
     [],
   );
   const socketRef = useRef<WebSocket | null>(null);
+  const didOpenRef = useRef(false);
+  const didUnmountRef = useRef(false);
 
   useEffect(() => {
+    didUnmountRef.current = false;
+    didOpenRef.current = false;
     const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
     ws.onopen = () => {
+      didOpenRef.current = true;
       setConnected(true);
+      setError(null);
       if (name.trim()) {
         ws.send(JSON.stringify({ type: "set_name", name }));
       }
     };
     ws.onclose = () => {
+      if (didUnmountRef.current) return;
       setConnected(false);
       setRoomState(null);
       setQueueSize(null);
     };
     ws.onerror = () => {
+      if (didUnmountRef.current) return;
+      if (!didOpenRef.current) {
+        // Ignore the first close in dev StrictMode double-mount.
+        return;
+      }
       setError("Connection error.");
     };
     ws.onmessage = (event) => {
@@ -73,6 +85,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
     };
 
     return () => {
+      didUnmountRef.current = true;
       socketRef.current = null;
       ws.close();
     };
