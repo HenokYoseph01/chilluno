@@ -94,7 +94,11 @@ export default function Rules({
                 key={option.value}
                 className={`rounded-md px-3 py-2 text-xs font-semibold ${
                   difficulty === option.value
-                    ? "bg-emerald-500 text-slate-950"
+                    ? option.value === "beginner"
+                      ? "bg-emerald-500 text-slate-950"
+                      : option.value === "intermediate"
+                        ? "bg-amber-400 text-slate-950"
+                        : "bg-rose-500 text-slate-50"
                     : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                 }`}
                 onClick={() => setDifficulty(option.value as AiDifficulty)}
