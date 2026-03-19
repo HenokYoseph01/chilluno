@@ -10,3 +10,10 @@ body {
   margin: 0;
   background-color: #020617;
 }
+
+button,
+a,
+summary,
+[role="button"] {
+  cursor: pointer;
+}
