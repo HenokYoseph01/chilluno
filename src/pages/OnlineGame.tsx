@@ -119,6 +119,54 @@ export default function OnlineGame({
   }, [pendingMiniGame?.type, pendingMiniGame?.throwerId, pendingMiniGame?.targetId]);
 
   useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "d") {
+        if (
+          isYourTurn &&
+          !state.winnerId &&
+          !pendingWild &&
+          !pendingMiniGame &&
+          !playerHasPlayable
+        ) {
+          send({ type: "action", action: { type: "draw" } });
+        }
+      }
+      if (key === "u") {
+        if (you?.unoWindow && !you.unoCalled) {
+          send({ type: "action", action: { type: "call_uno_self" } });
+        }
+      }
+      if (key === "c") {
+        const target = state.players.find(
+          (player) =>
+            player.id !== youId && player.unoWindow && !player.unoCalled,
+        );
+        if (target) {
+          send({ type: "action", action: { type: "call_uno_on", targetId: target.id } });
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    isYourTurn,
+    pendingMiniGame,
+    pendingWild,
+    playerHasPlayable,
+    send,
+    state.players,
+    state.winnerId,
+    you?.unoCalled,
+    you?.unoWindow,
+    youId,
+  ]);
+
+  useEffect(() => {
     const container = chatScrollRef.current;
     if (container) {
       container.scrollTop = container.scrollHeight;

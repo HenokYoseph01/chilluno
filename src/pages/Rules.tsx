@@ -40,6 +40,12 @@ export default function Rules({
               <div>- RPS (Rock, Paper, Scissors): loser draws 4.</div>
               <div>- Heads/Tails: loser draws 3.</div>
             </div>
+            <div className="mt-4 font-semibold">Shortcuts</div>
+            <div className="mt-2 space-y-2 text-slate-300">
+              <div>- D: Draw</div>
+              <div>- U: Call UNO</div>
+              <div>- C: Call UNO on opponent</div>
+            </div>
           </>
         ) : (
           <>
@@ -77,6 +83,12 @@ export default function Rules({
                 - Heads/Tails: thrower picks a side. If correct, opponent draws
                 3. If wrong, thrower draws 3.
               </div>
+            </div>
+            <div className="mt-4 font-semibold">Shortcuts</div>
+            <div className="mt-2 space-y-2 text-slate-300">
+              <div>- D: Draw</div>
+              <div>- U: Call UNO</div>
+              <div>- C: Call UNO on opponent</div>
             </div>
           </>
         )}

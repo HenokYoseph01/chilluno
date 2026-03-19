@@ -419,6 +419,52 @@ export default function Game({
   );
 
   useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.repeat) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === "d") {
+        if (
+          currentPlayer === "player" &&
+          !winner &&
+          !pendingWild &&
+          !pendingMiniGame &&
+          !playerHasPlayable
+        ) {
+          drawCard("player");
+        }
+      }
+      if (key === "u") {
+        if (unoWindow.player && !unoCalled.player) {
+          callUnoSelf("player");
+          notify("You called UNO!");
+        }
+      }
+      if (key === "c") {
+        if (unoWindow.ai && !unoCalled.ai) {
+          callUnoOn("ai");
+          notify("UNO called on AI. It draws 2.");
+        }
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [
+    currentPlayer,
+    notify,
+    pendingMiniGame,
+    pendingWild,
+    playerHasPlayable,
+    unoCalled.ai,
+    unoCalled.player,
+    unoWindow.ai,
+    unoWindow.player,
+    winner,
+  ]);
+
+  useEffect(() => {
     const lastEntry = [...game.history]
       .reverse()
       .find((entry) => entry.type === "card");
