@@ -5,10 +5,12 @@ import Online from "./pages/Online";
 import Rules from "./pages/Rules";
 
 type Screen = "menu" | "rules_ai" | "rules_people" | "ai" | "online";
+type AiDifficulty = "beginner" | "intermediate" | "insane";
 
 function App() {
   const [screen, setScreen] = useState<Screen>("menu");
   const [gameSession, setGameSession] = useState(0);
+  const [aiDifficulty, setAiDifficulty] = useState<AiDifficulty>("intermediate");
 
   if (screen === "menu") {
     return (
@@ -28,7 +30,8 @@ function App() {
         <Rules
           mode="ai"
           onBack={() => setScreen("menu")}
-          onStartAI={() => {
+          onStartAI={(difficulty) => {
+            setAiDifficulty(difficulty);
             setGameSession((prev) => prev + 1);
             setScreen("ai");
           }}
@@ -58,6 +61,7 @@ function App() {
       <Game
         key={gameSession}
         onBack={() => setScreen("menu")}
+        difficulty={aiDifficulty}
       />
     </div>
   );

@@ -8,6 +8,7 @@ type Player = "player" | "ai";
 type WildValue = "Wild" | "Wild4";
 type RpsChoice = "rock" | "paper" | "scissors";
 type CoinChoice = "heads" | "tails";
+type AiDifficulty = "beginner" | "intermediate" | "insane";
 
 const COLORS: Color[] = ["red", "yellow", "green", "blue"];
 
@@ -173,6 +174,112 @@ function pickBestColor(hand: deckOutline[]): Color {
   return best;
 }
 
+function pickColorForAi(
+  aiHand: deckOutline[],
+  playerHand: deckOutline[],
+  difficulty: AiDifficulty,
+): Color {
+  if (difficulty === "beginner") {
+    return pickRandomColor();
+  }
+
+  if (difficulty === "intermediate") {
+    return pickBestColor(aiHand);
+  }
+
+  const counts = new Map<Color, number>([
+    ["red", 0],
+    ["yellow", 0],
+    ["green", 0],
+    ["blue", 0],
+  ]);
+  const opponentCounts = new Map<Color, number>([
+    ["red", 0],
+    ["yellow", 0],
+    ["green", 0],
+    ["blue", 0],
+  ]);
+
+  for (const card of aiHand) {
+    if (card.color !== "wild") {
+      counts.set(card.color, (counts.get(card.color) ?? 0) + 1);
+    }
+  }
+  for (const card of playerHand) {
+    if (card.color !== "wild") {
+      opponentCounts.set(card.color, (opponentCounts.get(card.color) ?? 0) + 1);
+    }
+  }
+
+  let best: Color = pickRandomColor();
+  let bestScore = -Infinity;
+  for (const color of COLORS) {
+    const score =
+      (counts.get(color) ?? 0) * 2 - (opponentCounts.get(color) ?? 0);
+    if (score > bestScore) {
+      bestScore = score;
+      best = color;
+    }
+  }
+  return best;
+}
+
+function chooseAiCardIndex(
+  aiHand: deckOutline[],
+  playerHand: deckOutline[],
+  top: deckOutline,
+  pendingDraw2: number,
+  difficulty: AiDifficulty,
+): number {
+  const playableIndices = aiHand
+    .map((card, index) =>
+      isPlayableForTurn(card, top, pendingDraw2) ? index : -1,
+    )
+    .filter((index) => index >= 0);
+
+  if (playableIndices.length === 0) return -1;
+
+  if (difficulty === "beginner") {
+    return playableIndices[Math.floor(Math.random() * playableIndices.length)];
+  }
+
+  if (difficulty === "intermediate") {
+    if (playerHand.length <= 2) {
+      const priority = playableIndices.find((index) => {
+        const value = aiHand[index].value;
+        return value === "Draw2" || value === "Skip" || value === "Wild4";
+      });
+      if (priority !== undefined) return priority;
+    }
+    return playableIndices[0];
+  }
+
+  let bestIndex = playableIndices[0];
+  let bestScore = -Infinity;
+  for (const index of playableIndices) {
+    const card = aiHand[index];
+    let score = 0;
+    if (card.value === "Wild4") score += 90;
+    if (card.value === "Wild") score += 60;
+    if (card.value === "Draw2") score += playerHand.length <= 2 ? 80 : 45;
+    if (card.value === "Skip") score += playerHand.length <= 2 ? 60 : 25;
+    if (card.value === "Reverse") score += playerHand.length <= 2 ? 50 : 20;
+    if (typeof card.value === "number") score += 10;
+    if (card.color !== "wild") {
+      const aiColorCount = aiHand.filter((c) => c.color === card.color).length;
+      const playerColorCount = playerHand.filter(
+        (c) => c.color === card.color,
+      ).length;
+      score += aiColorCount * 2 - playerColorCount;
+    }
+    if (score > bestScore) {
+      bestScore = score;
+      bestIndex = index;
+    }
+  }
+  return bestIndex;
+}
+
 function refillDeckIfNeeded(
   deck: deckOutline[],
   discardPile: DiscardEntry[],
@@ -269,7 +376,13 @@ function finishPlay(
   return nextState;
 }
 
-export default function Game({ onBack }: { onBack: () => void }) {
+export default function Game({
+  onBack,
+  difficulty = "intermediate",
+}: {
+  onBack: () => void;
+  difficulty?: AiDifficulty;
+}) {
   const [game, setGame] = useState<GameState>(() => initGame());
   const [unoBanner, setUnoBanner] = useState<string | null>(null);
   const [showExitModal, setShowExitModal] = useState(false);
@@ -511,10 +624,26 @@ export default function Game({ onBack }: { onBack: () => void }) {
       const thrower = prev.pendingMiniGame.player;
       const colorToUse = prev.pendingMiniGame.chosenColor;
       if (result === "tie") {
-        const nextState = addHistoryEvent(
-          { ...prev, pendingMiniGame: null },
-          "RPS tie. No penalty.",
-        );
+        let nextState: GameState = {
+          ...prev,
+          pendingMiniGame: null,
+          currentPlayer: thrower === "player" ? "ai" : "player",
+          actionNonce: prev.actionNonce + 1,
+        };
+        nextState = {
+          ...nextState,
+          discardPile: [
+            ...nextState.discardPile.slice(0, -1),
+            {
+              ...nextState.discardPile[nextState.discardPile.length - 1],
+              card: {
+                ...nextState.discardPile[nextState.discardPile.length - 1].card,
+                color: colorToUse,
+              },
+            },
+          ],
+        };
+        nextState = addHistoryEvent(nextState, "RPS tie. No penalty.");
         showUnoBanner("RPS tie. No penalty.");
         return nextState;
       }
@@ -642,8 +771,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
           return nextState;
         }
         const top = prev.discardPile[prev.discardPile.length - 1].card;
-        const playableIndex = prev.aiHand.findIndex((card) =>
-          isPlayable(card, top),
+        const playableIndex = chooseAiCardIndex(
+          prev.aiHand,
+          prev.playerHand,
+          top,
+          prev.pendingDraw2,
+          difficulty,
         );
 
         if (playableIndex === -1) {
@@ -658,10 +791,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
             if (isPlayable(drawn, top)) {
               const chosenColor =
                 drawn.value === "Wild" || drawn.value === "Wild4"
-                  ? pickBestColor(
+                  ? pickColorForAi(
                       nextState.aiHand.filter(
                         (_, i) => i !== nextState.aiHand.length - 1,
                       ),
+                      nextState.playerHand,
+                      difficulty,
                     )
                   : undefined;
               const updatedHand = nextState.aiHand.slice(0, -1);
@@ -714,7 +849,11 @@ export default function Game({ onBack }: { onBack: () => void }) {
           };
         }
         if (card.value === "Wild" || card.value === "Wild4") {
-          const chosenColor = pickBestColor(nextHand);
+          const chosenColor = pickColorForAi(
+            nextHand,
+            prev.playerHand,
+            difficulty,
+          );
           nextState = finishPlay(nextState, "ai", card, chosenColor);
         } else {
           nextState = finishPlay(nextState, "ai", card);
@@ -727,7 +866,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [actionNonce, currentPlayer, pendingMiniGame, pendingWild, winner]);
+  }, [actionNonce, currentPlayer, pendingMiniGame, pendingWild, winner, difficulty]);
 
   useEffect(() => {
     setGame((prev) => {
@@ -796,7 +935,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     setRpsSelection(null);
     setCoinSelection(null);
-  }, [pendingMiniGame]);
+  }, [pendingMiniGame, difficulty]);
 
   useEffect(() => {
     if (winner || pendingWild || pendingMiniGame) return;
@@ -892,13 +1031,17 @@ export default function Game({ onBack }: { onBack: () => void }) {
           return prev;
         }
         return {
-          ...prev,
-          pendingMiniGame: {
-            ...prev.pendingMiniGame,
-            chosenColor: pickBestColor(prev.aiHand),
-          },
-        };
-      });
+            ...prev,
+            pendingMiniGame: {
+              ...prev.pendingMiniGame,
+              chosenColor: pickColorForAi(
+                prev.aiHand,
+                prev.playerHand,
+                difficulty,
+              ),
+            },
+          };
+        });
       resolveCoin(aiChoice);
     }, 600);
     return () => clearTimeout(timer);
@@ -917,11 +1060,15 @@ export default function Game({ onBack }: { onBack: () => void }) {
         ...prev,
         pendingMiniGame: {
           ...prev.pendingMiniGame,
-          chosenColor: pickBestColor(prev.aiHand),
+          chosenColor: pickColorForAi(
+            prev.aiHand,
+            prev.playerHand,
+            difficulty,
+          ),
         },
       };
     });
-  }, [pendingMiniGame]);
+  }, [pendingMiniGame, difficulty]);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 pb-28 lg:py-8">
