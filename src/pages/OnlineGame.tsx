@@ -50,6 +50,9 @@ export default function OnlineGame({
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
   const [coinSubmitted, setCoinSubmitted] = useState(false);
   const [showRules, setShowRules] = useState(true);
+  const [chatInput, setChatInput] = useState("");
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const lastChatIdRef = useRef<number | null>(null);
   const insult = useMemo(() => {
     if (!state.winnerId) return "";
     const pool = [
@@ -114,6 +117,39 @@ export default function OnlineGame({
     setRpsSubmitted(false);
     setCoinSubmitted(false);
   }, [pendingMiniGame?.type, pendingMiniGame?.throwerId, pendingMiniGame?.targetId]);
+
+  useEffect(() => {
+    const container = chatScrollRef.current;
+    if (container) {
+      container.scrollTop = container.scrollHeight;
+    }
+    const lastMessage = state.chat[state.chat.length - 1];
+    if (lastMessage && lastMessage.id !== lastChatIdRef.current) {
+      lastChatIdRef.current = lastMessage.id;
+      if (lastMessage.playerId !== youId) {
+        try {
+          const AudioCtx =
+            window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+          if (!AudioCtx) return;
+          const ctx = new AudioCtx();
+          const oscillator = ctx.createOscillator();
+          const gain = ctx.createGain();
+          oscillator.type = "sine";
+          oscillator.frequency.value = 740;
+          gain.gain.value = 0.02;
+          oscillator.connect(gain);
+          gain.connect(ctx.destination);
+          oscillator.start();
+          oscillator.stop(ctx.currentTime + 0.12);
+          oscillator.onended = () => {
+            ctx.close();
+          };
+        } catch {
+          // ignore audio errors (autoplay restrictions)
+        }
+      }
+    }
+  }, [state.chat, youId]);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6 pb-28">
@@ -206,6 +242,55 @@ export default function OnlineGame({
                 </div>
               </div>
             ))}
+          </div>
+          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+            <div className="text-xs uppercase tracking-widest text-slate-500">
+              Room Chat
+            </div>
+            <div
+              ref={chatScrollRef}
+              className="mt-2 max-h-48 space-y-2 overflow-auto text-xs text-slate-300"
+            >
+              {state.chat.map((message) => (
+                <div
+                  key={message.id}
+                  className="rounded-md bg-slate-900/60 px-2 py-1"
+                >
+                  <div className="text-emerald-300">
+                    {message.name}
+                    {message.playerId === youId ? " (You)" : ""}
+                  </div>
+                  <div className="text-slate-200">{message.text}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <input
+                className="flex-1 rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-slate-100 focus:border-emerald-500 focus:outline-none"
+                placeholder="Say something..."
+                value={chatInput}
+                onChange={(event) => setChatInput(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    const text = chatInput.trim();
+                    if (!text) return;
+                    send({ type: "chat", text });
+                    setChatInput("");
+                  }
+                }}
+              />
+              <button
+                className="rounded-md bg-emerald-500 px-3 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-400"
+                onClick={() => {
+                  const text = chatInput.trim();
+                  if (!text) return;
+                  send({ type: "chat", text });
+                  setChatInput("");
+                }}
+              >
+                Send
+              </button>
+            </div>
           </div>
         </div>
 

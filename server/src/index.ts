@@ -31,6 +31,7 @@ type ClientMessage =
   | { type: "leave_lobby" }
   | { type: "leave_room" }
   | { type: "play_again" }
+  | { type: "chat"; text: string }
   | {
       type: "action";
       action:
@@ -73,6 +74,13 @@ type PublicState = {
   isPrivate: boolean;
   status: "lobby" | "playing" | "finished";
   rematchVotes: PlayerId[];
+  chat: {
+    id: number;
+    playerId: PlayerId;
+    name: string;
+    text: string;
+    timestamp: number;
+  }[];
   players: {
     id: PlayerId;
     name: string;
@@ -225,6 +233,7 @@ function buildPublicState(room: Room): PublicState {
       isPrivate: room.isPrivate,
       status: room.status,
       rematchVotes: [...room.rematchVotes],
+      chat: room.chat.slice(-50),
       players: room.players.map((player) => ({
         id: player.id,
         name: player.name,
@@ -265,6 +274,7 @@ function buildPublicState(room: Room): PublicState {
     isPrivate: room.isPrivate,
     status: room.status,
     rematchVotes: [...room.rematchVotes],
+    chat: room.chat.slice(-50),
     players: room.players.map((player) => ({
       id: player.id,
       name: player.name,
@@ -348,6 +358,7 @@ function tryCreateRoom(size: 2 | 3 | 4) {
     size,
     players: roomPlayers,
     rematchVotes: new Set<PlayerId>(),
+    chat: [],
     state: {
       deck: [],
       discardPile: [],
@@ -413,6 +424,7 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
       { id: host.id, name: host.name, connected: true, hand: [] },
     ],
     rematchVotes: new Set<PlayerId>(),
+    chat: [],
     state: {
       deck: [],
       discardPile: [],
@@ -632,6 +644,27 @@ wss.on("connection", (ws: WebSocket) => {
         if (room.rematchVotes.size === room.players.length) {
           startRoom(room);
           return;
+        }
+        pushRoomState(room);
+      });
+      return;
+    }
+
+    if (message.type === "chat") {
+      withRoom(client, (room) => {
+        const text = message.text.trim();
+        if (!text) return;
+        const trimmed = text.slice(0, 200);
+        const nextId = room.chat.length > 0 ? room.chat[room.chat.length - 1].id + 1 : 1;
+        room.chat.push({
+          id: nextId,
+          playerId: client.id,
+          name: client.name,
+          text: trimmed,
+          timestamp: Date.now(),
+        });
+        if (room.chat.length > 200) {
+          room.chat = room.chat.slice(-200);
         }
         pushRoomState(room);
       });

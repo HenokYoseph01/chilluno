@@ -105,4 +105,13 @@ export interface Room {
   state: GameState;
   status: "lobby" | "playing" | "finished";
   rematchVotes: Set<PlayerId>;
+  chat: ChatMessage[];
+}
+
+export interface ChatMessage {
+  id: number;
+  playerId: PlayerId;
+  name: string;
+  text: string;
+  timestamp: number;
 }

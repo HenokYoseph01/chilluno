@@ -38,6 +38,13 @@ export type PublicState = {
   isPrivate: boolean;
   status: "lobby" | "playing" | "finished";
   rematchVotes: PlayerId[];
+  chat: {
+    id: number;
+    playerId: PlayerId;
+    name: string;
+    text: string;
+    timestamp: number;
+  }[];
   players: PublicPlayer[];
 } & (
   | {
@@ -88,6 +95,7 @@ export type ClientMessage =
   | { type: "leave_lobby" }
   | { type: "leave_room" }
   | { type: "play_again" }
+  | { type: "chat"; text: string }
   | {
       type: "action";
       action:
