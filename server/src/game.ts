@@ -293,7 +293,12 @@ export function updateUnoWindows(
   for (const player of room.players) {
     const hand = nextState.hands[player.id] ?? [];
     const window = nextState.unoWindow[player.id];
-    if (hand.length === 1 && !window.open) {
+    if (
+      hand.length === 1 &&
+      !window.open &&
+      !nextState.pendingWild &&
+      !nextState.pendingMiniGame
+    ) {
       nextState = {
         ...nextState,
         unoWindow: {

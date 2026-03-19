@@ -735,7 +735,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
       let changed = false;
       let nextState = prev;
 
-      if (prev.playerHand.length === 1 && !prev.unoWindow.player) {
+      if (
+        prev.playerHand.length === 1 &&
+        !prev.unoWindow.player &&
+        !prev.pendingWild &&
+        !prev.pendingMiniGame
+      ) {
         nextState = {
           ...nextState,
           unoWindow: {
@@ -757,7 +762,12 @@ export default function Game({ onBack }: { onBack: () => void }) {
         changed = true;
       }
 
-      if (prev.aiHand.length === 1 && !prev.unoWindow.ai) {
+      if (
+        prev.aiHand.length === 1 &&
+        !prev.unoWindow.ai &&
+        !prev.pendingWild &&
+        !prev.pendingMiniGame
+      ) {
         nextState = {
           ...nextState,
           unoWindow: {
@@ -781,7 +791,7 @@ export default function Game({ onBack }: { onBack: () => void }) {
 
       return changed ? nextState : prev;
     });
-  }, [aiHand.length, playerHand.length, winner]);
+  }, [aiHand.length, playerHand.length, winner, pendingMiniGame, pendingWild]);
 
   useEffect(() => {
     setRpsSelection(null);
