@@ -104,4 +104,5 @@ export interface Room {
   players: PlayerState[];
   state: GameState;
   status: "lobby" | "playing" | "finished";
+  rematchVotes: Set<PlayerId>;
 }

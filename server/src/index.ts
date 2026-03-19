@@ -30,6 +30,7 @@ type ClientMessage =
   | { type: "join_private"; code: string }
   | { type: "leave_lobby" }
   | { type: "leave_room" }
+  | { type: "play_again" }
   | {
       type: "action";
       action:
@@ -71,6 +72,7 @@ type PublicState = {
   roomSize: number;
   isPrivate: boolean;
   status: "lobby" | "playing" | "finished";
+  rematchVotes: PlayerId[];
   players: {
     id: PlayerId;
     name: string;
@@ -222,6 +224,7 @@ function buildPublicState(room: Room): PublicState {
       roomSize: room.size,
       isPrivate: room.isPrivate,
       status: room.status,
+      rematchVotes: [...room.rematchVotes],
       players: room.players.map((player) => ({
         id: player.id,
         name: player.name,
@@ -261,6 +264,7 @@ function buildPublicState(room: Room): PublicState {
     roomSize: room.size,
     isPrivate: room.isPrivate,
     status: room.status,
+    rematchVotes: [...room.rematchVotes],
     players: room.players.map((player) => ({
       id: player.id,
       name: player.name,
@@ -319,6 +323,7 @@ function removeFromQueues(playerId: PlayerId) {
 
 function startRoom(room: Room) {
   room.status = "playing";
+  room.rematchVotes.clear();
   room.state = initGame(room);
   pushRoomState(room);
 }
@@ -342,6 +347,7 @@ function tryCreateRoom(size: 2 | 3 | 4) {
     isPrivate: false,
     size,
     players: roomPlayers,
+    rematchVotes: new Set<PlayerId>(),
     state: {
       deck: [],
       discardPile: [],
@@ -406,6 +412,7 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
     players: [
       { id: host.id, name: host.name, connected: true, hand: [] },
     ],
+    rematchVotes: new Set<PlayerId>(),
     state: {
       deck: [],
       discardPile: [],
@@ -591,6 +598,7 @@ wss.on("connection", (ws: WebSocket) => {
 
     if (message.type === "leave_room") {
       withRoom(client, (room) => {
+        room.rematchVotes.delete(client.id);
         clearUnoTimer(room.id, client.id);
         room.players = room.players.filter((p) => p.id !== client.id);
         delete room.state.hands[client.id];
@@ -614,6 +622,19 @@ wss.on("connection", (ws: WebSocket) => {
       });
       client.roomId = null;
       broadcastLobbyState();
+      return;
+    }
+
+    if (message.type === "play_again") {
+      withRoom(client, (room) => {
+        if (room.status !== "finished") return;
+        room.rematchVotes.add(client.id);
+        if (room.rematchVotes.size === room.players.length) {
+          startRoom(room);
+          return;
+        }
+        pushRoomState(room);
+      });
       return;
     }
 
@@ -697,6 +718,7 @@ wss.on("connection", (ws: WebSocket) => {
             if (nextHand.length === 0) {
               room.state = finishPlay(room, room.state, playerId, card);
               room.state.winnerId = playerId;
+              room.status = "finished";
               room.state = updateUnoWindows(room, room.state);
               pushRoomState(room);
               return;
@@ -714,6 +736,7 @@ wss.on("connection", (ws: WebSocket) => {
           room.state = finishPlay(room, room.state, playerId, card);
           if (nextHand.length === 0) {
             room.state.winnerId = playerId;
+            room.status = "finished";
           }
           room.state = updateUnoWindows(room, room.state);
           pushRoomState(room);
@@ -733,6 +756,7 @@ wss.on("connection", (ws: WebSocket) => {
           room.state = finishPlay(room, room.state, playerId, updatedDiscard, message.action.color);
           if ((room.state.hands[playerId] ?? []).length === 0) {
             room.state.winnerId = playerId;
+            room.status = "finished";
           }
           room.state = updateUnoWindows(room, room.state);
           pushRoomState(room);

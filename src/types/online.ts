@@ -37,6 +37,7 @@ export type PublicState = {
   roomSize: number;
   isPrivate: boolean;
   status: "lobby" | "playing" | "finished";
+  rematchVotes: PlayerId[];
   players: PublicPlayer[];
 } & (
   | {
@@ -86,6 +87,7 @@ export type ClientMessage =
   | { type: "join_private"; code: string }
   | { type: "leave_lobby" }
   | { type: "leave_room" }
+  | { type: "play_again" }
   | {
       type: "action";
       action:

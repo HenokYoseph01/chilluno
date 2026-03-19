@@ -50,6 +50,19 @@ export default function OnlineGame({
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
   const [coinSubmitted, setCoinSubmitted] = useState(false);
   const [showRules, setShowRules] = useState(true);
+  const insult = useMemo(() => {
+    if (!state.winnerId) return "";
+    const pool = [
+      "Skill issue.",
+      "Get better, noob.",
+      "Maybe after 1000 years.",
+      "Stinky loser.",
+      "My grandma plays better than you.",
+      "That was... not it.",
+      "Try turning your monitor on.",
+    ];
+    return pool[Math.floor(Math.random() * pool.length)];
+  }, [state.winnerId]);
   const pileControls = useAnimation();
   const lastHistoryIdRef = useRef<number | null>(null);
   const lastWinnerRef = useRef<string | null>(null);
@@ -123,11 +136,6 @@ export default function OnlineGame({
           {state.pendingDraw2 > 0 && (
             <div className="text-amber-300">
               Pending Draw2: {state.pendingDraw2}
-            </div>
-          )}
-          {state.winnerId && (
-            <div className="rounded-full bg-amber-500/20 px-3 py-1 text-amber-200">
-              Winner: {playerLabel(state, state.winnerId)}
             </div>
           )}
         </div>
@@ -603,6 +611,58 @@ export default function OnlineGame({
             >
               Got It — Let’s Play
             </button>
+          </div>
+        </div>
+      )}
+
+      {state.winnerId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
+          <div className="w-full max-w-md rounded-2xl border border-amber-400/40 bg-slate-950 p-6 text-center text-sm text-slate-200 shadow-2xl shadow-amber-500/20">
+            {state.winnerId === youId ? (
+              <>
+                <div className="text-xs uppercase tracking-[0.3em] text-amber-300">
+                  Champion
+                </div>
+                <div className="mt-3 text-3xl font-black text-amber-200">
+                  You Win!
+                </div>
+                <div className="mt-2 text-slate-300">
+                  That was clean. Run it back?
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs uppercase tracking-[0.3em] text-rose-300">
+                  Defeat
+                </div>
+                <div className="mt-3 text-2xl font-bold text-rose-200">
+                  {insult}
+                </div>
+                <div className="mt-2 text-slate-300">
+                  {playerLabel(state, state.winnerId)} took the crown.
+                </div>
+              </>
+            )}
+            <div className="mt-5 flex flex-col items-center gap-2">
+              <button
+                className="w-full rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
+                onClick={() => send({ type: "play_again" })}
+                disabled={state.rematchVotes.includes(youId)}
+              >
+                {state.rematchVotes.includes(youId)
+                  ? "Waiting for others..."
+                  : "Play Again"}
+              </button>
+              <div className="text-xs text-slate-500">
+                Rematch votes: {state.rematchVotes.length}/{state.players.length}
+              </div>
+              <button
+                className="text-xs text-slate-400 hover:text-slate-200"
+                onClick={onLeave}
+              >
+                Leave Room
+              </button>
+            </div>
           </div>
         </div>
       )}
