@@ -51,6 +51,19 @@ function pickRandomColor(): Color {
   return COLORS[Math.floor(Math.random() * COLORS.length)];
 }
 
+function getAiUnoDelay(difficulty: AiDifficulty): number {
+  switch (difficulty) {
+    case "beginner":
+      return 2400;
+    case "intermediate":
+      return 1600;
+    case "insane":
+      return 900;
+    default:
+      return 1600;
+  }
+}
+
 function initGame(): GameState {
   const deck = generateDeck();
   const playerHand = deck.slice(0, 7);
@@ -991,6 +1004,7 @@ export default function Game({
     }
     if (unoWindow.ai && !unoCalled.ai) {
       const token = unoWindow.aiToken;
+      const delay = getAiUnoDelay(difficulty);
       aiAutoUnoTimer.current = window.setTimeout(() => {
         setGame((prev) => {
           if (!prev.unoWindow.ai || prev.unoWindow.aiToken !== token) {
@@ -1007,7 +1021,7 @@ export default function Game({
           nextState = addHistoryEvent(nextState, "AI called UNO!");
           return nextState;
         });
-      }, 1000);
+      }, delay);
     }
     return () => {
       if (aiAutoUnoTimer.current !== null) {
@@ -1022,6 +1036,7 @@ export default function Game({
     unoWindow.ai,
     unoWindow.aiToken,
     winner,
+    difficulty,
   ]);
 
   useEffect(() => {
@@ -1032,6 +1047,7 @@ export default function Game({
     }
     if (unoWindow.player && !unoCalled.player) {
       const token = unoWindow.playerToken;
+      const delay = getAiUnoDelay(difficulty);
       aiCallPlayerTimer.current = window.setTimeout(() => {
         setGame((prev) => {
           if (!prev.unoWindow.player || prev.unoWindow.playerToken !== token) {
@@ -1050,7 +1066,7 @@ export default function Game({
           showUnoBanner("AI called UNO on you. Draw 2.");
           return nextState;
         });
-      }, 1000);
+      }, delay);
     }
     return () => {
       if (aiCallPlayerTimer.current !== null) {
@@ -1065,6 +1081,7 @@ export default function Game({
     unoWindow.player,
     unoWindow.playerToken,
     winner,
+    difficulty,
   ]);
 
   useEffect(() => {

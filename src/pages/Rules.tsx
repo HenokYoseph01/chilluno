@@ -46,6 +46,12 @@ export default function Rules({
               <div>- U: Call UNO</div>
               <div>- C: Call UNO on opponent</div>
             </div>
+            <div className="mt-4 font-semibold">AI UNO Timing</div>
+            <div className="mt-2 space-y-2 text-slate-300">
+              <div>- Beginner: AI waits ~2.4s to call UNO.</div>
+              <div>- Intermediate: AI waits ~1.6s.</div>
+              <div>- Insane: AI waits ~0.9s.</div>
+            </div>
           </>
         ) : (
           <>
