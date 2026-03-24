@@ -64,6 +64,30 @@ function getAiUnoDelay(difficulty: AiDifficulty): number {
   }
 }
 
+function playImpactSound() {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = 160;
+    gain.gain.value = 0.08;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    oscillator.stop(ctx.currentTime + 0.2);
+    oscillator.onended = () => ctx.close();
+  } catch {
+    // ignore audio errors (autoplay restrictions)
+  }
+}
+
 function initGame(): GameState {
   const deck = generateDeck();
   const playerHand = deck.slice(0, 7);
@@ -401,12 +425,21 @@ export default function Game({
   const [showExitModal, setShowExitModal] = useState(false);
   const [rpsSelection, setRpsSelection] = useState<RpsChoice | null>(null);
   const [coinSelection, setCoinSelection] = useState<CoinChoice | null>(null);
+  const [coinFlip, setCoinFlip] = useState<{
+    active: boolean;
+    result: CoinChoice | null;
+    choice: CoinChoice | null;
+  }>({ active: false, result: null, choice: null });
+  const [coinFlipKey, setCoinFlipKey] = useState(0);
+  const [coinImpactKey, setCoinImpactKey] = useState(0);
   const pileControls = useAnimation();
   const lastHistoryIdRef = useRef<number | null>(null);
   const lastWinnerRef = useRef<Player | null>(null);
   const unoBannerTimer = useRef<number | null>(null);
   const aiAutoUnoTimer = useRef<number | null>(null);
   const aiCallPlayerTimer = useRef<number | null>(null);
+  const coinFlipTimer = useRef<number | null>(null);
+  const coinFlipClearTimer = useRef<number | null>(null);
 
   const topCard = useMemo(
     () => game.discardPile[game.discardPile.length - 1].card,
@@ -737,8 +770,29 @@ export default function Game({
     setRpsSelection(null);
   }
 
-  function resolveCoin(choice: CoinChoice) {
-    const flip: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
+  function startCoinFlip(choice: CoinChoice) {
+    const result: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
+    if (coinFlipTimer.current !== null) {
+      window.clearTimeout(coinFlipTimer.current);
+    }
+    if (coinFlipClearTimer.current !== null) {
+      window.clearTimeout(coinFlipClearTimer.current);
+      coinFlipClearTimer.current = null;
+    }
+    setCoinFlipKey((prev) => prev + 1);
+    setCoinFlip({ active: true, result, choice });
+    coinFlipTimer.current = window.setTimeout(() => {
+      resolveCoin(choice, result);
+      setCoinFlip({ active: false, result, choice });
+      setCoinImpactKey((prev) => prev + 1);
+      playImpactSound();
+      coinFlipTimer.current = null;
+    }, 1200);
+  }
+
+  function resolveCoin(choice: CoinChoice, forcedFlip?: CoinChoice) {
+    const flip: CoinChoice =
+      forcedFlip ?? (Math.random() < 0.5 ? "heads" : "tails");
     setGame((prev) => {
       if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "coin") {
         return prev;
@@ -997,6 +1051,31 @@ export default function Game({
   }, [pendingMiniGame, difficulty]);
 
   useEffect(() => {
+    if (pendingMiniGame) return;
+    if (coinFlipTimer.current !== null) {
+      window.clearTimeout(coinFlipTimer.current);
+      coinFlipTimer.current = null;
+    }
+    if (!coinFlip.result) {
+      setCoinFlip({ active: false, result: null, choice: null });
+      return;
+    }
+    if (coinFlipClearTimer.current !== null) {
+      window.clearTimeout(coinFlipClearTimer.current);
+    }
+    coinFlipClearTimer.current = window.setTimeout(() => {
+      setCoinFlip({ active: false, result: null, choice: null });
+      coinFlipClearTimer.current = null;
+    }, 800);
+    return () => {
+      if (coinFlipClearTimer.current !== null) {
+        window.clearTimeout(coinFlipClearTimer.current);
+        coinFlipClearTimer.current = null;
+      }
+    };
+  }, [pendingMiniGame, coinFlip.result]);
+
+  useEffect(() => {
     if (winner || pendingWild || pendingMiniGame) return;
     if (aiAutoUnoTimer.current !== null) {
       window.clearTimeout(aiAutoUnoTimer.current);
@@ -1105,7 +1184,7 @@ export default function Game({
             },
           };
         });
-      resolveCoin(aiChoice);
+      startCoinFlip(aiChoice);
     }, 600);
     return () => clearTimeout(timer);
   }, [pendingMiniGame]);
@@ -1414,7 +1493,19 @@ export default function Game({
 
       {pendingMiniGame && pendingMiniGame.type === "coin" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+          <motion.div
+            key={coinImpactKey}
+            className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200"
+            animate={
+              coinFlip.result && !coinFlip.active
+                ? {
+                    x: [0, -14, 14, -10, 10, -6, 6, 0],
+                    y: [0, 10, 0],
+                  }
+                : { x: 0, y: 0 }
+            }
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+          >
             <div className="text-base font-semibold text-slate-100">
               Heads or Tails
             </div>
@@ -1422,6 +1513,50 @@ export default function Game({
               {pendingMiniGame.player === "player"
                 ? "Pick heads or tails."
                 : "AI is choosing a side."}
+            </div>
+            <div className="mt-4 flex items-center justify-center">
+              <motion.div
+                key={coinImpactKey}
+                className="h-24 w-24 [perspective:900px]"
+                animate={
+                  coinFlip.result && !coinFlip.active
+                    ? {
+                        y: [0, 18, -6, 8, 0],
+                        scale: [1, 0.84, 1.04, 0.98, 1],
+                      }
+                    : { y: 0, scale: 1 }
+                }
+                transition={{ duration: 0.45, ease: "easeOut" }}
+              >
+                <motion.div
+                  key={coinFlipKey}
+                  className="relative h-full w-full rounded-full [transform-style:preserve-3d]"
+                  initial={{ rotateY: 0 }}
+                  animate={{
+                    rotateY:
+                      coinFlip.active
+                        ? 360 * 4 + (coinFlip.result === "tails" ? 180 : 0)
+                        : coinFlip.result === "tails"
+                          ? 180
+                          : 0,
+                  }}
+                  transition={{ duration: 1.1, ease: "easeInOut" }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-400 text-lg font-bold text-slate-900 shadow-lg [backface-visibility:hidden]">
+                    H
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-200 text-lg font-bold text-slate-900 shadow-lg [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                    T
+                  </div>
+                </motion.div>
+              </motion.div>
+            </div>
+            <div className="mt-2 text-center text-xs text-slate-400">
+              {coinFlip.active
+                ? "Flipping..."
+                : coinFlip.result
+                  ? `${coinFlip.result === "heads" ? "Heads" : "Tails"} landed.`
+                  : "Ready to flip."}
             </div>
             <div className="mt-4">
               <div className="text-xs uppercase tracking-widest text-slate-500">
@@ -1478,7 +1613,8 @@ export default function Game({
                   onClick={() => setCoinSelection(choice)}
                   disabled={
                     pendingMiniGame.player !== "player" ||
-                    !pendingMiniGame?.chosenColor
+                    !pendingMiniGame?.chosenColor ||
+                    coinFlip.active
                   }
                 >
                   {choice}
@@ -1491,12 +1627,16 @@ export default function Game({
                   className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
                   onClick={() => {
                     if (coinSelection && pendingMiniGame?.chosenColor) {
-                      resolveCoin(coinSelection);
+                      startCoinFlip(coinSelection);
                     }
                   }}
-                  disabled={!coinSelection || !pendingMiniGame?.chosenColor}
+                  disabled={
+                    !coinSelection ||
+                    !pendingMiniGame?.chosenColor ||
+                    coinFlip.active
+                  }
                 >
-                  Flip
+                  {coinFlip.active ? "Flipping..." : "Flip"}
                 </button>
               ) : (
                 <button
@@ -1507,9 +1647,76 @@ export default function Game({
                 </button>
               )}
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+
+      {(!pendingMiniGame || pendingMiniGame.type !== "coin") &&
+        (coinFlip.active || coinFlip.result) && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
+            <motion.div
+              key={coinImpactKey}
+              className="rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 text-center text-sm text-slate-200"
+              animate={
+                coinFlip.result && !coinFlip.active
+                  ? {
+                      x: [0, -14, 14, -10, 10, -6, 6, 0],
+                      y: [0, 10, 0],
+                    }
+                  : { x: 0, y: 0 }
+              }
+              transition={{ duration: 0.35, ease: "easeInOut" }}
+            >
+              <div className="text-base font-semibold text-slate-100">
+                Heads or Tails
+              </div>
+              <div className="mt-2 flex items-center justify-center">
+                <motion.div
+                  key={coinImpactKey}
+                  className="h-24 w-24 [perspective:900px]"
+                animate={
+                  coinFlip.result && !coinFlip.active
+                    ? {
+                        y: [0, 18, -6, 8, 0],
+                        scale: [1, 0.84, 1.04, 0.98, 1],
+                      }
+                    : { y: 0, scale: 1 }
+                }
+                transition={{ duration: 0.45, ease: "easeOut" }}
+              >
+                  <motion.div
+                    key={coinFlipKey}
+                    className="relative h-full w-full rounded-full [transform-style:preserve-3d]"
+                    initial={{ rotateY: 0 }}
+                    animate={{
+                      rotateY:
+                        coinFlip.active
+                          ? 360 * 4 + (coinFlip.result === "tails" ? 180 : 0)
+                          : coinFlip.result === "tails"
+                            ? 180
+                            : 0,
+                    }}
+                    transition={{ duration: 1.1, ease: "easeInOut" }}
+                  >
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-400 text-lg font-bold text-slate-900 shadow-lg [backface-visibility:hidden]">
+                      H
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-200 text-lg font-bold text-slate-900 shadow-lg [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                      T
+                    </div>
+                  </motion.div>
+                </motion.div>
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                {coinFlip.active
+                  ? "Flipping..."
+                  : coinFlip.result
+                    ? `${coinFlip.result === "heads" ? "Heads" : "Tails"} landed.`
+                    : "Ready to flip."}
+              </div>
+            </motion.div>
+          </div>
+        )}
 
       {unoBanner && (
         <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">

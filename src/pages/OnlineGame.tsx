@@ -32,6 +32,30 @@ function playerLabel(state: ActivePublicState, id: string) {
   return state.players.find((player) => player.id === id)?.name ?? "Player";
 }
 
+function playImpactSound() {
+  try {
+    const AudioCtx =
+      window.AudioContext ||
+      (window as typeof window & { webkitAudioContext?: typeof AudioContext })
+        .webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    oscillator.type = "sine";
+    oscillator.frequency.value = 160;
+    gain.gain.value = 0.08;
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start();
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.18);
+    oscillator.stop(ctx.currentTime + 0.2);
+    oscillator.onended = () => ctx.close();
+  } catch {
+    // ignore audio errors (autoplay restrictions)
+  }
+}
+
 export default function OnlineGame({
   state,
   hand,
@@ -49,10 +73,19 @@ export default function OnlineGame({
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
   const [coinSubmitted, setCoinSubmitted] = useState(false);
+  const [coinFlip, setCoinFlip] = useState<{
+    active: boolean;
+    result: "heads" | "tails" | null;
+  }>({ active: false, result: null });
+  const [coinFlipKey, setCoinFlipKey] = useState(0);
+  const [coinImpactKey, setCoinImpactKey] = useState(0);
   const [showRules, setShowRules] = useState(true);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const lastChatIdRef = useRef<number | null>(null);
+  const coinFlipTimer = useRef<number | null>(null);
+  const coinFlipClearTimer = useRef<number | null>(null);
+  const lastCoinEventIdRef = useRef<number | null>(null);
   const insult = useMemo(() => {
     if (!state.winnerId) return "";
     const pool = [
@@ -112,11 +145,60 @@ export default function OnlineGame({
   }, [pileControls, state.history, state.winnerId]);
 
   useEffect(() => {
+    const latestCoinEvent = [...state.history]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.type === "event" &&
+          (entry.text.includes("Heads landed") ||
+            entry.text.includes("Tails landed")),
+      );
+    if (!latestCoinEvent || latestCoinEvent.id === lastCoinEventIdRef.current) {
+      return;
+    }
+    lastCoinEventIdRef.current = latestCoinEvent.id;
+    const result = latestCoinEvent.text.includes("Heads landed")
+      ? "heads"
+      : "tails";
+    if (coinFlipTimer.current !== null) {
+      window.clearTimeout(coinFlipTimer.current);
+      coinFlipTimer.current = null;
+    }
+    if (coinFlipClearTimer.current !== null) {
+      window.clearTimeout(coinFlipClearTimer.current);
+      coinFlipClearTimer.current = null;
+    }
+    setCoinFlipKey((prev) => prev + 1);
+    setCoinFlip({ active: true, result });
+    coinFlipTimer.current = window.setTimeout(() => {
+      setCoinFlip({ active: false, result });
+      setCoinImpactKey((prev) => prev + 1);
+      playImpactSound();
+      coinFlipTimer.current = null;
+      coinFlipClearTimer.current = window.setTimeout(() => {
+        setCoinFlip({ active: false, result: null });
+        coinFlipClearTimer.current = null;
+      }, 800);
+    }, 1100);
+  }, [state.history]);
+
+  useEffect(() => {
     setRpsSelection(null);
     setCoinSelection(null);
     setRpsSubmitted(false);
     setCoinSubmitted(false);
   }, [pendingMiniGame?.type, pendingMiniGame?.throwerId, pendingMiniGame?.targetId]);
+
+  useEffect(() => {
+    return () => {
+      if (coinFlipTimer.current !== null) {
+        window.clearTimeout(coinFlipTimer.current);
+      }
+      if (coinFlipClearTimer.current !== null) {
+        window.clearTimeout(coinFlipClearTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -596,7 +678,19 @@ export default function OnlineGame({
 
       {pendingMiniGame && pendingMiniGame.type === "coin" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+          <motion.div
+            key={coinImpactKey}
+            className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200"
+            animate={
+              coinFlip.result && !coinFlip.active
+                ? {
+                    x: [0, -14, 14, -10, 10, -6, 6, 0],
+                    y: [0, 10, 0],
+                  }
+                : { x: 0, y: 0 }
+            }
+            transition={{ duration: 0.35, ease: "easeInOut" }}
+          >
             <div className="text-base font-semibold text-slate-100">
               Heads or Tails
             </div>
@@ -610,6 +704,50 @@ export default function OnlineGame({
                   ? "Locked in. Waiting for the flip."
                   : "Pick heads or tails."
                 : "Waiting for the thrower."}
+            </div>
+            <div className="mt-4 flex items-center justify-center">
+              <motion.div
+                key={coinImpactKey}
+                className="h-24 w-24 [perspective:900px]"
+                animate={
+                  coinFlip.result && !coinFlip.active
+                    ? {
+                        y: [0, 18, -6, 8, 0],
+                        scale: [1, 0.84, 1.04, 0.98, 1],
+                      }
+                    : { y: 0, scale: 1 }
+                }
+                transition={{ duration: 0.45, ease: "easeOut" }}
+              >
+                <motion.div
+                  key={coinFlipKey}
+                  className="relative h-full w-full rounded-full [transform-style:preserve-3d]"
+                  initial={{ rotateY: 0 }}
+                  animate={{
+                    rotateY:
+                      coinFlip.active
+                        ? 360 * 4 + (coinFlip.result === "tails" ? 180 : 0)
+                        : coinFlip.result === "tails"
+                          ? 180
+                          : 0,
+                  }}
+                  transition={{ duration: 1.1, ease: "easeInOut" }}
+                >
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-400 text-lg font-bold text-slate-900 shadow-lg [backface-visibility:hidden]">
+                    H
+                  </div>
+                  <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-200 text-lg font-bold text-slate-900 shadow-lg [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                    T
+                  </div>
+                </motion.div>
+              </motion.div>
+            </div>
+            <div className="mt-2 text-center text-xs text-slate-400">
+              {coinFlip.active
+                ? "Flipping..."
+                : coinFlip.result
+                  ? `${coinFlip.result === "heads" ? "Heads" : "Tails"} landed.`
+                  : "Ready to flip."}
             </div>
             <div className="mt-4">
               <div className="text-xs uppercase tracking-widest text-slate-500">
@@ -655,7 +793,8 @@ export default function OnlineGame({
                   onClick={() => setCoinSelection(choice)}
                   disabled={
                     pendingMiniGame.throwerId !== youId ||
-                    !pendingMiniGame.chosenColor
+                    !pendingMiniGame.chosenColor ||
+                    coinFlip.active
                   }
                 >
                   {choice}
@@ -678,15 +817,83 @@ export default function OnlineGame({
                   coinSubmitted ||
                   !coinSelection ||
                   !pendingMiniGame.chosenColor ||
-                  pendingMiniGame.throwerId !== youId
+                  pendingMiniGame.throwerId !== youId ||
+                  coinFlip.active
                 }
               >
-                {coinSubmitted ? "Locked" : "Flip"}
+                {coinSubmitted ? "Locked" : coinFlip.active ? "Flipping..." : "Flip"}
               </button>
             </div>
-          </div>
+          </motion.div>
         </div>
       )}
+
+      {(!pendingMiniGame || pendingMiniGame.type !== "coin") &&
+        (coinFlip.active || coinFlip.result) && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
+            <motion.div
+              key={coinImpactKey}
+              className="rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 text-center text-sm text-slate-200"
+              animate={
+                coinFlip.result && !coinFlip.active
+                  ? {
+                      x: [0, -14, 14, -10, 10, -6, 6, 0],
+                      y: [0, 10, 0],
+                    }
+                  : { x: 0, y: 0 }
+              }
+              transition={{ duration: 0.35, ease: "easeInOut" }}
+            >
+              <div className="text-base font-semibold text-slate-100">
+                Heads or Tails
+              </div>
+              <div className="mt-2 flex items-center justify-center">
+                <motion.div
+                  key={coinImpactKey}
+                  className="h-24 w-24 [perspective:900px]"
+                animate={
+                  coinFlip.result && !coinFlip.active
+                    ? {
+                        y: [0, 18, -6, 8, 0],
+                        scale: [1, 0.84, 1.04, 0.98, 1],
+                      }
+                    : { y: 0, scale: 1 }
+                }
+                transition={{ duration: 0.45, ease: "easeOut" }}
+              >
+                  <motion.div
+                    key={coinFlipKey}
+                    className="relative h-full w-full rounded-full [transform-style:preserve-3d]"
+                    initial={{ rotateY: 0 }}
+                    animate={{
+                      rotateY:
+                        coinFlip.active
+                          ? 360 * 4 + (coinFlip.result === "tails" ? 180 : 0)
+                          : coinFlip.result === "tails"
+                            ? 180
+                            : 0,
+                    }}
+                    transition={{ duration: 1.1, ease: "easeInOut" }}
+                  >
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-400 text-lg font-bold text-slate-900 shadow-lg [backface-visibility:hidden]">
+                      H
+                    </div>
+                    <div className="absolute inset-0 flex items-center justify-center rounded-full bg-amber-200 text-lg font-bold text-slate-900 shadow-lg [transform:rotateY(180deg)] [backface-visibility:hidden]">
+                      T
+                    </div>
+                  </motion.div>
+                </motion.div>
+              </div>
+              <div className="mt-2 text-xs text-slate-400">
+                {coinFlip.active
+                  ? "Flipping..."
+                  : coinFlip.result
+                    ? `${coinFlip.result === "heads" ? "Heads" : "Tails"} landed.`
+                    : "Ready to flip."}
+              </div>
+            </motion.div>
+          </div>
+        )}
 
       <details className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
         <summary className="cursor-pointer text-sm text-slate-400">
