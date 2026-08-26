@@ -185,6 +185,19 @@ function addHistoryEvent(state: GameState, text: string): GameState {
   };
 }
 
+function declareWinner(state: GameState, winner: Player): GameState {
+  return {
+    ...state,
+    winner,
+    unoCalled: { player: true, ai: true },
+    unoWindow: {
+      ...state.unoWindow,
+      player: false,
+      ai: false,
+    },
+  };
+}
+
 function pickBestColor(hand: deckOutline[]): Color {
   const counts = new Map<Color, number>([
     ["red", 0],
@@ -584,6 +597,9 @@ export default function Game({
       if (!card) {
         return prev;
       }
+      if (hand.length === 1 && !prev.unoCalled[player]) {
+        return prev;
+      }
       if (prev.pendingDraw2 > 0 && card.value !== "Draw2") {
         return prev;
       }
@@ -614,8 +630,7 @@ export default function Game({
       if (card.value === "Wild" || card.value === "Wild4") {
         if (nextHand.length === 0) {
           nextState = finishPlay(nextState, player, card, pickRandomColor());
-          nextState.winner = player;
-          return nextState;
+          return declareWinner(nextState, player);
         }
         let wildState: GameState = {
           ...nextState,
@@ -628,7 +643,7 @@ export default function Game({
 
       nextState = finishPlay(nextState, player, card);
       if (nextHand.length === 0) {
-        nextState.winner = player;
+        nextState = declareWinner(nextState, player);
       }
       return nextState;
     });
@@ -695,7 +710,7 @@ export default function Game({
       };
       nextState = finishPlay(nextState, "player", updatedDiscard, color);
       if (nextState.playerHand.length === 0) {
-        nextState.winner = "player";
+        nextState = declareWinner(nextState, "player");
       }
       return nextState;
     });
@@ -858,6 +873,17 @@ export default function Game({
         ) {
           return prev;
         }
+        if (prev.aiHand.length === 1 && !prev.unoCalled.ai) {
+          showUnoBanner("AI called UNO!");
+          return addHistoryEvent(
+            {
+              ...prev,
+              unoCalled: { ...prev.unoCalled, ai: true },
+              actionNonce: prev.actionNonce + 1,
+            },
+            "AI called UNO before playing its last card.",
+          );
+        }
         if (prev.pendingDraw2 > 0) {
           const draw2Index = prev.aiHand.findIndex(
             (card) => card.value === "Draw2",
@@ -871,7 +897,7 @@ export default function Game({
             };
             nextState = finishPlay(nextState, "ai", card);
             if (nextHand.length === 0) {
-              nextState.winner = "ai";
+              nextState = declareWinner(nextState, "ai");
             }
             return nextState;
           }
@@ -931,7 +957,7 @@ export default function Game({
               }
               nextState = finishPlay(nextState, "ai", drawn, chosenColor);
               if (updatedHand.length === 0) {
-                nextState.winner = "ai";
+                nextState = declareWinner(nextState, "ai");
               }
               drewPlayable = true;
               break;
@@ -973,7 +999,7 @@ export default function Game({
           nextState = finishPlay(nextState, "ai", card);
         }
         if (nextHand.length === 0) {
-          nextState.winner = "ai";
+          nextState = declareWinner(nextState, "ai");
         }
         return nextState;
       });
@@ -1373,6 +1399,7 @@ export default function Game({
                   !!winner ||
                   pendingWild !== null ||
                   pendingMiniGame !== null ||
+                  (playerHand.length === 1 && !unoCalled.player) ||
                   !isPlayableForTurn(val, topCard, pendingDraw2)
                 }
                 className="rounded-lg transition disabled:cursor-not-allowed disabled:grayscale disabled:opacity-35"

@@ -709,6 +709,13 @@ wss.on("connection", (ws: WebSocket) => {
           const hand = room.state.hands[playerId] ?? [];
           const card = hand[action.index];
           if (!card) return;
+          if (hand.length === 1 && !room.state.unoCalled[playerId]) {
+            send(ws, {
+              type: "error",
+              message: "Call UNO before playing your last card.",
+            });
+            return;
+          }
           const top = room.state.discardPile[room.state.discardPile.length - 1].card;
           if (!isPlayableForTurn(card, top, room.state.pendingDraw2)) return;
           if (room.state.pendingDraw2 > 0 && card.value !== "Draw2") return;

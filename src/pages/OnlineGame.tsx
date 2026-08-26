@@ -489,6 +489,7 @@ export default function OnlineGame({
                     !!state.winnerId ||
                     pendingWild !== null ||
                     pendingMiniGame !== null ||
+                    (hand.length === 1 && !you?.unoCalled) ||
                     !isPlayableForTurn(card, topCard, state.pendingDraw2)
                   }
                   className="rounded-lg transition hover:-translate-y-1 disabled:opacity-50"
@@ -1010,7 +1011,6 @@ export default function OnlineGame({
     </div>
   );
 }
-
 
 
 

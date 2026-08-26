@@ -289,6 +289,18 @@ export function updateUnoWindows(
   room: Room,
   state: GameState,
 ): GameState {
+  if (state.winnerId) {
+    const unoCalled = { ...state.unoCalled };
+    const unoWindow = { ...state.unoWindow };
+    for (const player of room.players) {
+      unoCalled[player.id] = true;
+      unoWindow[player.id] = {
+        ...(unoWindow[player.id] ?? { token: 0 }),
+        open: false,
+      };
+    }
+    return { ...state, unoCalled, unoWindow };
+  }
   let nextState = state;
   for (const player of room.players) {
     const hand = nextState.hands[player.id] ?? [];
