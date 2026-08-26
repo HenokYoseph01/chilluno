@@ -11,6 +11,7 @@ export type PublicPlayer = {
   unoWindow: boolean;
   unoCalled: boolean;
   disconnected: boolean;
+  reconnectDeadline: number | null;
 };
 
 export type PublicPendingMiniGame =
@@ -72,7 +73,7 @@ export type ActivePublicState = Extract<
 >;
 
 export type ServerMessage =
-  | { type: "connected"; id: PlayerId; name: string }
+  | { type: "connected"; id: PlayerId; name: string; sessionToken: string; resumed: boolean }
   | { type: "lobby_state"; queues: LobbyQueue[] }
   | { type: "queue_joined"; size: 2 | 3 | 4; waiting: number }
   | {
@@ -87,7 +88,7 @@ export type ServerMessage =
   | { type: "error"; message: string };
 
 export type ClientMessage =
-  | { type: "hello"; name?: string }
+  | { type: "hello"; name?: string; sessionToken: string }
   | { type: "set_name"; name: string }
   | { type: "join_lobby"; desiredPlayers: 2 | 3 | 4 }
   | { type: "create_private"; desiredPlayers: 2 | 3 | 4 }

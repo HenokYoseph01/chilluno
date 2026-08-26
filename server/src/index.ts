@@ -23,7 +23,7 @@ import type {
 } from "./types.js";
 
 type ClientMessage =
-  | { type: "hello"; name?: string }
+  | { type: "hello"; name?: string; sessionToken: string }
   | { type: "set_name"; name: string }
   | { type: "join_lobby"; desiredPlayers: 2 | 3 | 4 }
   | { type: "create_private"; desiredPlayers: 2 | 3 | 4 }
@@ -46,7 +46,7 @@ type ClientMessage =
     };
 
 type ServerMessage =
-  | { type: "connected"; id: PlayerId; name: string }
+  | { type: "connected"; id: PlayerId; name: string; sessionToken: string; resumed: boolean }
   | {
       type: "lobby_state";
       queues: { size: 2 | 3 | 4; waiting: number }[];
@@ -88,6 +88,7 @@ type PublicState = {
     unoWindow: boolean;
     unoCalled: boolean;
     disconnected: boolean;
+    reconnectDeadline: number | null;
   }[];
 } & (
   | { status: "lobby" }
@@ -132,6 +133,15 @@ type ClientInfo = {
   ws: WebSocket;
   roomId: string | null;
   queueSize: 2 | 3 | 4 | null;
+  sessionToken: string;
+};
+
+type SessionInfo = {
+  playerId: PlayerId;
+  name: string;
+  nameSet: boolean;
+  roomId: string | null;
+  queueSize: 2 | 3 | 4 | null;
 };
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -141,7 +151,11 @@ const rooms = new Map<string, Room>();
 const queues: Record<2 | 3 | 4, PlayerId[]> = { 2: [], 3: [], 4: [] };
 const roomCodes = new Map<string, string>();
 const unoTimers = new Map<string, NodeJS.Timeout>();
+const sessions = new Map<string, SessionInfo>();
+const disconnectTimers = new Map<PlayerId, NodeJS.Timeout>();
+const disconnectDeadlines = new Map<PlayerId, number>();
 const UNO_WINDOW_MS = 5000;
+const RECONNECT_GRACE_MS = 45_000;
 
 function send(ws: WebSocket, message: ServerMessage) {
   if (ws.readyState === ws.OPEN) {
@@ -164,6 +178,23 @@ function clearUnoTimer(roomId: string, playerId: PlayerId) {
     clearTimeout(timer);
     unoTimers.delete(key);
   }
+}
+
+function clearDisconnectTimer(playerId: PlayerId) {
+  const timer = disconnectTimers.get(playerId);
+  if (timer) clearTimeout(timer);
+  disconnectTimers.delete(playerId);
+  disconnectDeadlines.delete(playerId);
+}
+
+function syncSession(client: ClientInfo) {
+  sessions.set(client.sessionToken, {
+    playerId: client.id,
+    name: client.name,
+    nameSet: client.nameSet,
+    roomId: client.roomId,
+    queueSize: client.queueSize,
+  });
 }
 
 function scheduleUnoTimer(room: Room, playerId: PlayerId) {
@@ -241,6 +272,7 @@ function buildPublicState(room: Room): PublicState {
         unoWindow: room.state.unoWindow[player.id]?.open ?? false,
         unoCalled: room.state.unoCalled[player.id] ?? true,
         disconnected: !player.connected,
+        reconnectDeadline: disconnectDeadlines.get(player.id) ?? null,
       })),
     };
   }
@@ -282,6 +314,7 @@ function buildPublicState(room: Room): PublicState {
       unoWindow: room.state.unoWindow[player.id]?.open ?? false,
       unoCalled: room.state.unoCalled[player.id] ?? true,
       disconnected: !player.connected,
+      reconnectDeadline: disconnectDeadlines.get(player.id) ?? null,
     })),
     currentPlayerId: currentPlayerId(room),
     direction: room.state.direction,
@@ -313,11 +346,13 @@ function closeRoom(room: Room, reason: string) {
   }
   for (const player of room.players) {
     clearUnoTimer(room.id, player.id);
+    clearDisconnectTimer(player.id);
   }
   for (const player of room.players) {
     const client = [...clients.values()].find((c) => c.id === player.id);
     if (client) {
       client.roomId = null;
+      syncSession(client);
       send(client.ws, { type: "room_closed", reason });
     }
   }
@@ -348,6 +383,7 @@ function tryCreateRoom(size: 2 | 3 | 4) {
       id,
       name: client?.name ?? "Guest",
       connected: !!client,
+      disconnectedAt: null,
       hand: [],
     };
   });
@@ -382,6 +418,7 @@ function tryCreateRoom(size: 2 | 3 | 4) {
     if (client) {
       client.roomId = roomId;
       client.queueSize = null;
+      syncSession(client);
     }
   }
   startRoom(room);
@@ -421,7 +458,7 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
     isPrivate: true,
     size,
     players: [
-      { id: host.id, name: host.name, connected: true, hand: [] },
+      { id: host.id, name: host.name, connected: true, disconnectedAt: null, hand: [] },
     ],
     rematchVotes: new Set<PlayerId>(),
     chat: [],
@@ -446,6 +483,7 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
   roomCodes.set(code, roomId);
   host.roomId = roomId;
   host.queueSize = null;
+  syncSession(host);
   send(host.ws, {
     type: "room_joined",
     roomId,
@@ -486,10 +524,9 @@ wss.on("connection", (ws: WebSocket) => {
     ws,
     roomId: null,
     queueSize: null,
+    sessionToken: randomUUID(),
   };
   clients.set(ws, client);
-  send(ws, { type: "connected", id, name: client.name });
-  broadcastLobbyState();
 
   ws.on("message", (data: WebSocket.RawData) => {
     let message: ClientMessage;
@@ -501,13 +538,62 @@ wss.on("connection", (ws: WebSocket) => {
     }
 
     if (message.type === "hello") {
-      if (message.name && message.name.trim().length > 0) {
+      const requestedToken = message.sessionToken.trim().slice(0, 128);
+      const previous = requestedToken ? sessions.get(requestedToken) : undefined;
+      let resumed = false;
+
+      if (previous) {
+        const oldConnection = [...clients.values()].find(
+          (candidate) => candidate !== client && candidate.id === previous.playerId,
+        );
+        if (oldConnection) oldConnection.ws.close(4001, "Session resumed elsewhere");
+        client.id = previous.playerId;
+        client.name = previous.name;
+        client.nameSet = previous.nameSet;
+        client.roomId = previous.roomId;
+        client.queueSize = previous.queueSize;
+        client.sessionToken = requestedToken;
+        resumed = true;
+      } else {
+        client.sessionToken = requestedToken || randomUUID();
+      }
+
+      if (message.name?.trim()) {
         client.name = message.name.trim().slice(0, 24);
         client.nameSet = true;
-      } else {
-        send(ws, { type: "error", message: "Name is required." });
       }
-      send(ws, { type: "connected", id: client.id, name: client.name });
+      syncSession(client);
+      send(ws, {
+        type: "connected",
+        id: client.id,
+        name: client.name,
+        sessionToken: client.sessionToken,
+        resumed,
+      });
+
+      if (client.roomId) {
+        const room = rooms.get(client.roomId);
+        const player = room?.players.find((entry) => entry.id === client.id);
+        if (room && player) {
+          clearDisconnectTimer(client.id);
+          player.connected = true;
+          player.disconnectedAt = null;
+          player.name = client.name;
+          room.state = addHistoryEvent(room.state, `${client.name} reconnected.`);
+          send(ws, {
+            type: "room_joined",
+            roomId: room.id,
+            youId: client.id,
+            state: buildPublicState(room),
+            hand: room.state.hands[client.id] ?? [],
+          });
+          pushRoomState(room);
+        } else {
+          client.roomId = null;
+          syncSession(client);
+        }
+      }
+      broadcastLobbyState();
       return;
     }
 
@@ -519,7 +605,8 @@ wss.on("connection", (ws: WebSocket) => {
       }
       client.name = trimmed.slice(0, 24);
       client.nameSet = true;
-      send(ws, { type: "connected", id: client.id, name: client.name });
+      syncSession(client);
+      send(ws, { type: "connected", id: client.id, name: client.name, sessionToken: client.sessionToken, resumed: false });
       return;
     }
 
@@ -533,6 +620,7 @@ wss.on("connection", (ws: WebSocket) => {
       const size = message.desiredPlayers;
       queues[size].push(client.id);
       client.queueSize = size;
+      syncSession(client);
       send(ws, { type: "queue_joined", size, waiting: queues[size].length });
       tryCreateRoom(size);
       broadcastLobbyState();
@@ -580,12 +668,15 @@ wss.on("connection", (ws: WebSocket) => {
         id: client.id,
         name: client.name,
         connected: true,
+        disconnectedAt: null,
         hand: [],
       });
       room.state.hands[client.id] = [];
       room.state.unoCalled[client.id] = true;
       room.state.unoWindow[client.id] = { open: false, token: 0 };
       client.roomId = room.id;
+      client.queueSize = null;
+      syncSession(client);
       send(ws, {
         type: "room_joined",
         roomId: room.id,
@@ -604,6 +695,7 @@ wss.on("connection", (ws: WebSocket) => {
     if (message.type === "leave_lobby") {
       removeFromQueues(client.id);
       client.queueSize = null;
+      syncSession(client);
       broadcastLobbyState();
       return;
     }
@@ -633,6 +725,7 @@ wss.on("connection", (ws: WebSocket) => {
         pushRoomState(room);
       });
       client.roomId = null;
+      syncSession(client);
       broadcastLobbyState();
       return;
     }
@@ -885,7 +978,15 @@ wss.on("connection", (ws: WebSocket) => {
   });
 
   ws.on("close", () => {
+    clients.delete(ws);
+    const replacement = [...clients.values()].find(
+      (candidate) => candidate.id === client.id,
+    );
+    if (replacement) return;
+
     removeFromQueues(client.id);
+    client.queueSize = null;
+    syncSession(client);
     if (client.roomId) {
       const room = rooms.get(client.roomId);
       if (room) {
@@ -893,19 +994,52 @@ wss.on("connection", (ws: WebSocket) => {
         const player = room.players.find((p) => p.id === client.id);
         if (player) {
           player.connected = false;
+          player.disconnectedAt = Date.now();
         }
+        const deadline = Date.now() + RECONNECT_GRACE_MS;
+        disconnectDeadlines.set(client.id, deadline);
         room.state = addHistoryEvent(
           room.state,
-          `${client.name} disconnected.`,
+          `${client.name} lost connection. Holding their seat for 45 seconds.`,
         );
-        if (room.players.length < 2) {
-          closeRoom(room, "Room closed (not enough players).");
-        } else {
-          pushRoomState(room);
-        }
+        clearDisconnectTimer(client.id);
+        disconnectDeadlines.set(client.id, deadline);
+        const timer = setTimeout(() => {
+          disconnectTimers.delete(client.id);
+          disconnectDeadlines.delete(client.id);
+          const liveRoom = rooms.get(room.id);
+          const livePlayer = liveRoom?.players.find((entry) => entry.id === client.id);
+          if (!liveRoom || !livePlayer || livePlayer.connected) return;
+
+          if (liveRoom.status === "lobby") {
+            liveRoom.players = liveRoom.players.filter((entry) => entry.id !== client.id);
+            if (liveRoom.players.length === 0) {
+              closeRoom(liveRoom, "Room closed.");
+              return;
+            }
+          } else if (liveRoom.status === "playing") {
+            const pending = liveRoom.state.pendingMiniGame;
+            if (pending && (pending.throwerId === client.id || pending.targetId === client.id)) {
+              liveRoom.state.pendingMiniGame = null;
+            }
+            if (currentPlayerId(liveRoom) === client.id) {
+              liveRoom.state.currentPlayerIndex = advanceIndex(
+                liveRoom,
+                liveRoom.state.currentPlayerIndex,
+                1,
+              );
+            }
+            liveRoom.state = addHistoryEvent(
+              liveRoom.state,
+              `${client.name} did not reconnect. Their turn was skipped.`,
+            );
+          }
+          pushRoomState(liveRoom);
+        }, RECONNECT_GRACE_MS);
+        disconnectTimers.set(client.id, timer);
+        pushRoomState(room);
       }
     }
-    clients.delete(ws);
     broadcastLobbyState();
   });
 });

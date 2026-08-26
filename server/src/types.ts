@@ -93,6 +93,7 @@ export interface PlayerState {
   id: PlayerId;
   name: string;
   connected: boolean;
+  disconnectedAt: number | null;
   hand: DeckCard[];
 }
 

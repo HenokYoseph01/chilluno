@@ -7,6 +7,7 @@ const DEFAULT_WS_URL = "ws://localhost:8787";
 
 export default function Online({ onBack }: { onBack: () => void }) {
   const [connected, setConnected] = useState(false);
+  const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [clientId, setClientId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [queueSize, setQueueSize] = useState<2 | 3 | 4 | null>(null);
@@ -24,8 +25,10 @@ export default function Online({ onBack }: { onBack: () => void }) {
   );
   const socketRef = useRef<WebSocket | null>(null);
   const nameRef = useRef(name);
-  const didOpenRef = useRef(false);
   const didUnmountRef = useRef(false);
+  const sessionTokenRef = useRef(
+    window.localStorage.getItem("chillno-session") ?? window.crypto.randomUUID(),
+  );
 
   useEffect(() => {
     nameRef.current = name;
@@ -33,33 +36,39 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     didUnmountRef.current = false;
-    didOpenRef.current = false;
-    const ws = new WebSocket(wsUrl);
-    socketRef.current = ws;
+    let retryTimer: number | null = null;
+    let attempts = 0;
 
-    ws.onopen = () => {
-      didOpenRef.current = true;
-      setConnected(true);
-      setError(null);
-      if (nameRef.current.trim()) {
-        ws.send(JSON.stringify({ type: "set_name", name: nameRef.current }));
-      }
-    };
-    ws.onclose = () => {
+    const connect = () => {
       if (didUnmountRef.current) return;
-      setConnected(false);
-      setRoomState(null);
-      setQueueSize(null);
-    };
-    ws.onerror = () => {
-      if (didUnmountRef.current) return;
-      if (!didOpenRef.current) {
-        // Ignore the first close in dev StrictMode double-mount.
-        return;
-      }
-      setError("Connection error.");
-    };
-    ws.onmessage = (event) => {
+      const ws = new WebSocket(wsUrl);
+      socketRef.current = ws;
+
+      ws.onopen = () => {
+        attempts = 0;
+        setReconnectAttempt(0);
+        setConnected(true);
+        setError(null);
+        ws.send(JSON.stringify({
+          type: "hello",
+          name: nameRef.current.trim() || undefined,
+          sessionToken: sessionTokenRef.current,
+        }));
+      };
+      ws.onclose = () => {
+        if (didUnmountRef.current) return;
+        setConnected(false);
+        socketRef.current = null;
+        attempts += 1;
+        setReconnectAttempt(attempts);
+        const delay = Math.min(1000 * 2 ** (attempts - 1), 10_000);
+        retryTimer = window.setTimeout(connect, delay);
+      };
+      ws.onerror = () => {
+        if (didUnmountRef.current) return;
+        setError("Connection interrupted. Trying to rejoin…");
+      };
+      ws.onmessage = (event) => {
       let message: ServerMessage;
       try {
         message = JSON.parse(event.data);
@@ -68,6 +77,8 @@ export default function Online({ onBack }: { onBack: () => void }) {
       }
       if (message.type === "connected") {
         setClientId(message.id);
+        sessionTokenRef.current = message.sessionToken;
+        window.localStorage.setItem("chillno-session", message.sessionToken);
       }
       if (message.type === "lobby_state") {
         setQueues(message.queues);
@@ -91,12 +102,17 @@ export default function Online({ onBack }: { onBack: () => void }) {
       if (message.type === "error") {
         setError(message.message);
       }
+      };
     };
+
+    connect();
 
     return () => {
       didUnmountRef.current = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      const liveSocket = socketRef.current;
       socketRef.current = null;
-      ws.close();
+      if (liveSocket) liveSocket.close();
     };
   }, [wsUrl]);
 
@@ -144,16 +160,10 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   if (roomState && clientId && roomState.status !== "lobby") {
     return (
-      <OnlineGame
-        state={roomState}
-        hand={hand}
-        youId={clientId}
-        send={send}
-        onLeave={() => {
-          send({ type: "leave_room" });
-          setRoomState(null);
-        }}
-      />
+      <>
+        <OnlineGame state={roomState} hand={hand} youId={clientId} send={send} onLeave={() => { send({ type: "leave_room" }); setRoomState(null); }} />
+        {!connected && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#080711]/80 px-4 backdrop-blur-md"><div className="glass-panel w-full max-w-sm rounded-3xl p-7 text-center"><div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-white/15 border-t-[#b8f36b]"/><div className="display-font mt-5 text-xl font-bold">Rejoining your table…</div><p className="mt-2 text-sm text-slate-400">Your cards and seat are being held. Attempt {reconnectAttempt || 1}.</p></div></div>}
+      </>
     );
   }
 

@@ -71,6 +71,7 @@ export default function OnlineGame({
   onLeave: () => void;
 }) {
   const [codeCopied, setCodeCopied] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
   const [rpsSelection, setRpsSelection] = useState<"rock" | "paper" | "scissors" | null>(null);
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
@@ -105,6 +106,12 @@ export default function OnlineGame({
   const pileControls = useAnimation();
   const lastHistoryIdRef = useRef<number | null>(null);
   const lastWinnerRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!state.players.some((player) => player.reconnectDeadline)) return;
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [state.players]);
 
   const topCard = useMemo(() => state.discardTop, [state.discardTop]);
   const you = state.players.find((player) => player.id === youId);
@@ -345,7 +352,13 @@ export default function OnlineGame({
                   <div className="text-sm text-slate-100">
                     {player.name}
                     {player.id === youId ? " (You)" : ""}
-                    {player.disconnected ? " - Disconnected" : ""}
+                    {player.disconnected ? (
+                      <span className="ml-2 text-amber-300">
+                        · reconnecting{player.reconnectDeadline
+                          ? ` (${Math.max(0, Math.ceil((player.reconnectDeadline - clock) / 1000))}s)`
+                          : ""}
+                      </span>
+                    ) : ""}
                   </div>
                   <div className="text-xs text-slate-400">
                     Cards: {player.handCount}
@@ -1011,7 +1024,6 @@ export default function OnlineGame({
     </div>
   );
 }
-
 
 
 
