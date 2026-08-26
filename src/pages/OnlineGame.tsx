@@ -1,12 +1,20 @@
 ﻿/* eslint-disable react-hooks/set-state-in-effect */
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, useAnimation } from "framer-motion";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
 import type { deckOutline } from "../types/cards";
 import type { ActivePublicState, ClientMessage, PublicPlayer } from "../types/online";
 
 const COLORS = ["red", "yellow", "green", "blue"] as const;
+
+type VisualEffect = {
+  id: number;
+  type: "play" | "draw" | "skip" | "reverse" | "wild" | "uno";
+  playerId: string;
+  card?: deckOutline;
+  count?: number;
+};
 
 function isPlayable(card: deckOutline, top: deckOutline): boolean {
   if (card.color === "wild" || card.value === "Wild" || card.value === "Wild4") {
@@ -85,6 +93,25 @@ function playImpactSound() {
   }
 }
 
+function playGameSound(type: VisualEffect["type"], muted: boolean) {
+  if (muted) return;
+  try {
+    const AudioCtx = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const frequencies = { play: 330, draw: 210, skip: 120, reverse: 440, wild: 560, uno: 720 };
+    oscillator.type = type === "uno" || type === "wild" ? "triangle" : "sine";
+    oscillator.frequency.setValueAtTime(frequencies[type], ctx.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(frequencies[type] * 1.35, ctx.currentTime + .16);
+    gain.gain.setValueAtTime(.035, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(.0001, ctx.currentTime + .2);
+    oscillator.connect(gain); gain.connect(ctx.destination); oscillator.start(); oscillator.stop(ctx.currentTime + .21);
+    oscillator.onended = () => ctx.close();
+  } catch { /* sound is optional */ }
+}
+
 export default function OnlineGame({
   state,
   hand,
@@ -100,6 +127,9 @@ export default function OnlineGame({
 }) {
   const [codeCopied, setCodeCopied] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
+  const [muted, setMuted] = useState(() => window.localStorage.getItem("chillno-muted") === "true");
+  const [visualEffects, setVisualEffects] = useState<VisualEffect[]>([]);
+  const [invalidCard, setInvalidCard] = useState<{ index: number; message: string } | null>(null);
   const [rpsSelection, setRpsSelection] = useState<"rock" | "paper" | "scissors" | null>(null);
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
@@ -134,6 +164,46 @@ export default function OnlineGame({
   const pileControls = useAnimation();
   const lastHistoryIdRef = useRef<number | null>(null);
   const lastWinnerRef = useRef<string | null>(null);
+  const visualCounterRef = useRef(0);
+  const lastVisualHistoryIdRef = useRef<number | null>(state.history.at(-1)?.id ?? null);
+  const previousCountsRef = useRef(new Map(state.players.map((player) => [player.id, player.handCount])));
+  const visualTimersRef = useRef<number[]>([]);
+
+  const enqueueEffect = useCallback((effect: Omit<VisualEffect, "id">) => {
+    const id = ++visualCounterRef.current;
+    setVisualEffects((current) => [...current.slice(-5), { ...effect, id }]);
+    playGameSound(effect.type, muted);
+    const timer = window.setTimeout(() => {
+      setVisualEffects((current) => current.filter((item) => item.id !== id));
+      visualTimersRef.current = visualTimersRef.current.filter((timerId) => timerId !== timer);
+    }, effect.type === "play" || effect.type === "draw" ? 850 : 1250);
+    visualTimersRef.current.push(timer);
+  }, [muted]);
+
+  useEffect(() => () => visualTimersRef.current.forEach((timer) => window.clearTimeout(timer)), []);
+
+  useEffect(() => {
+    const latest = state.history.at(-1);
+    if (latest && latest.id !== lastVisualHistoryIdRef.current) {
+      lastVisualHistoryIdRef.current = latest.id;
+      if (latest.type === "card") {
+        enqueueEffect({ type: "play", playerId: latest.playerId, card: latest.card });
+        if (latest.card.value === "Skip") enqueueEffect({ type: "skip", playerId: latest.playerId });
+        if (latest.card.value === "Reverse") enqueueEffect({ type: "reverse", playerId: latest.playerId });
+        if (latest.card.value === "Wild" || latest.card.value === "Wild4" || latest.card.value === "RPS" || latest.card.value === "HT") enqueueEffect({ type: "wild", playerId: latest.playerId, card: latest.card });
+      } else if (latest.text.toLowerCase().includes("uno")) {
+        const caller = state.players.find((player) => latest.text.includes(player.name));
+        enqueueEffect({ type: "uno", playerId: caller?.id ?? state.currentPlayerId });
+      }
+    }
+
+    for (const player of state.players) {
+      const previous = previousCountsRef.current.get(player.id) ?? player.handCount;
+      const gained = player.handCount - previous;
+      if (gained > 0) enqueueEffect({ type: "draw", playerId: player.id, count: gained });
+    }
+    previousCountsRef.current = new Map(state.players.map((player) => [player.id, player.handCount]));
+  }, [state.history, state.players, state.currentPlayerId, enqueueEffect]);
 
   useEffect(() => {
     if (!state.players.some((player) => player.reconnectDeadline)) return;
@@ -149,6 +219,12 @@ export default function OnlineGame({
   const playerHasPlayable = hand.some((card) =>
     isPlayableForTurn(card, topCard, state.pendingDraw2),
   );
+  const opponents = state.players.filter((player) => player.id !== youId);
+  function visualPosition(playerId: string) {
+    if (playerId === youId) return "seat-bottom";
+    const index = opponents.findIndex((player) => player.id === playerId);
+    return index >= 0 ? seatPosition(index, opponents.length) : "seat-top";
+  }
   const lastEvent = useMemo(() => {
     for (let i = state.history.length - 1; i >= 0; i -= 1) {
       const entry = state.history[i];
@@ -342,6 +418,7 @@ export default function OnlineGame({
           )}
         </div>
         <div className="flex items-center gap-2">
+          <button className="secondary-button px-3 py-2 text-sm" aria-label={muted ? "Turn game sounds on" : "Mute game sounds"} onClick={() => { const next = !muted; setMuted(next); window.localStorage.setItem("chillno-muted", String(next)); }}>{muted ? "Sound off" : "Sound on"}</button>
           <button
             className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
             onClick={onLeave}
@@ -471,6 +548,15 @@ export default function OnlineGame({
             {state.players.filter((player) => player.id !== youId).map((player, index, opponents) => (
               <PlayerSeat key={player.id} player={player} active={state.currentPlayerId === player.id} position={seatPosition(index, opponents.length)} clock={clock} onCallUno={() => send({ type: "action", action: { type: "call_uno_on", targetId: player.id } })} />
             ))}
+            <AnimatePresence>
+              {visualEffects.map((effect) => {
+                const position = visualPosition(effect.playerId);
+                if (effect.type === "play" && effect.card) return <motion.div key={effect.id} className={`flight-card flight-card--in effect-${position}`} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><Card color={effect.card.color} value={effect.card.value} compact /></motion.div>;
+                if (effect.type === "draw") return <motion.div key={effect.id} className={`flight-card flight-card--out effect-${position}`} initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><CardBack/><b>+{effect.count}</b></motion.div>;
+                if (effect.type === "wild") return <motion.div key={effect.id} className={`wild-wash wild-wash--${effect.card?.color ?? "wild"}`} initial={{ opacity:0 }} animate={{ opacity:[0,.4,.18] }} exit={{ opacity:0 }} />;
+                return <motion.div key={effect.id} className={`action-stamp action-stamp--${effect.type}`} initial={{ scale:0, rotate:-12, opacity:0 }} animate={{ scale:[0,1.15,1], rotate:0, opacity:1 }} exit={{ scale:1.4, opacity:0 }}>{effect.type === "skip" ? "SKIPPED" : effect.type === "reverse" ? "REVERSED" : "UNO!"}</motion.div>;
+              })}
+            </AnimatePresence>
             <div className="absolute left-1/2 top-[58%] flex -translate-x-1/2 -translate-y-1/2 items-center gap-5 sm:gap-8">
               <div className="pile-slot">
                 <div className="pointer-events-none scale-90"><CardBack /></div>
@@ -498,23 +584,33 @@ export default function OnlineGame({
               {hand.map((card, index) => (
                 <button
                   key={`${card.color}-${card.value}-${index}`}
-                  onClick={() =>
-                    send({ type: "action", action: { type: "play", index } })
-                  }
+                  onClick={() => {
+                    const reason = hand.length === 1 && !you?.unoCalled
+                      ? "Call UNO before playing your final card."
+                      : !isPlayableForTurn(card, topCard, state.pendingDraw2)
+                        ? state.pendingDraw2 > 0 ? "Stack another Draw 2 or take the penalty." : "Match the color or value."
+                        : null;
+                    if (reason) {
+                      setInvalidCard({ index, message: reason });
+                      window.setTimeout(() => setInvalidCard(null), 1800);
+                      return;
+                    }
+                    send({ type: "action", action: { type: "play", index } });
+                  }}
                   disabled={
                     !isYourTurn ||
                     !!state.winnerId ||
                     pendingWild !== null ||
                     pendingMiniGame !== null ||
-                    (hand.length === 1 && !you?.unoCalled) ||
-                    !isPlayableForTurn(card, topCard, state.pendingDraw2)
+                    false
                   }
-                  className="rounded-lg transition hover:-translate-y-1 disabled:opacity-50"
+                  className={`rounded-lg transition hover:-translate-y-1 disabled:opacity-35 ${invalidCard?.index === index ? "invalid-card" : ""}`}
                 >
                   <Card color={card.color} value={card.value} />
                 </button>
               ))}
             </div>
+            <AnimatePresence>{invalidCard && <motion.div className="mx-auto mt-3 w-fit rounded-full border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-200" initial={{ opacity:0, y:5 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>{invalidCard.message}</motion.div>}</AnimatePresence>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
                 className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
