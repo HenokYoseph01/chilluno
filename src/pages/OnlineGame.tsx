@@ -4,7 +4,7 @@ import { motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
 import type { deckOutline } from "../types/cards";
-import type { ActivePublicState, ClientMessage } from "../types/online";
+import type { ActivePublicState, ClientMessage, PublicPlayer } from "../types/online";
 
 const COLORS = ["red", "yellow", "green", "blue"] as const;
 
@@ -31,6 +31,34 @@ function isPlayableForTurn(
 
 function playerLabel(state: ActivePublicState, id: string) {
   return state.players.find((player) => player.id === id)?.name ?? "Player";
+}
+
+function seatPosition(index: number, total: number) {
+  if (total === 1) return "seat-top";
+  if (total === 2) return index === 0 ? "seat-top-left" : "seat-top-right";
+  return index === 0 ? "seat-left" : index === 1 ? "seat-top" : "seat-right";
+}
+
+function PlayerSeat({ player, active, position, clock, onCallUno }: {
+  player: PublicPlayer;
+  active: boolean;
+  position: string;
+  clock: number;
+  onCallUno: () => void;
+}) {
+  const seconds = player.reconnectDeadline
+    ? Math.max(0, Math.ceil((player.reconnectDeadline - clock) / 1000))
+    : null;
+  return (
+    <motion.div className={`player-seat ${position} ${active ? "player-seat--active" : ""} ${player.disconnected ? "player-seat--offline" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      {active && <motion.div layoutId="active-seat" className="player-seat__turn"><span /> Playing</motion.div>}
+      <div className="player-seat__cards" aria-label={`${player.handCount} hidden cards`}>
+        {[0, 1, 2].slice(0, Math.min(3, player.handCount)).map((cardIndex) => <div key={cardIndex} style={{ transform: `translateX(${(cardIndex - 1) * 11}px) rotate(${(cardIndex - 1) * 7}deg)` }}><CardBack /></div>)}
+      </div>
+      <div className="player-seat__identity"><div className="player-seat__avatar">{player.name.slice(0, 1).toUpperCase()}</div><div><strong>{player.name}</strong><small>{player.disconnected ? `Reconnecting${seconds !== null ? ` · ${seconds}s` : ""}` : `${player.handCount} card${player.handCount === 1 ? "" : "s"}`}</small></div></div>
+      {player.unoWindow && !player.unoCalled && <button className="player-seat__uno" onClick={onCallUno}>Call UNO!</button>}
+    </motion.div>
+  );
 }
 
 function playImpactSound() {
@@ -387,10 +415,10 @@ export default function OnlineGame({
               </div>
             ))}
           </div>
-          <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-            <div className="text-xs uppercase tracking-widest text-slate-500">
-              Room Chat
-            </div>
+          <details className="mt-4 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+            <summary className="flex list-none items-center justify-between text-xs uppercase tracking-widest text-slate-500">
+              <span>Room Chat</span><span className="rounded-full bg-white/5 px-2 py-1 normal-case tracking-normal">{state.chat.length} messages</span>
+            </summary>
             <div
               ref={chatScrollRef}
               className="mt-2 max-h-48 space-y-2 overflow-auto text-xs text-slate-300"
@@ -435,61 +463,37 @@ export default function OnlineGame({
                 Send
               </button>
             </div>
-          </div>
+          </details>
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-sm text-slate-400">Top of Discard</div>
-            <div className="mt-3">
-              <motion.div
-                initial={false}
-                animate={pileControls}
-                variants={{
-                  slam: {
-                    y: [-40, 0, 8, 0],
-                    rotate: [-6, 0],
-                    scale: [1.18, 1, 0.98, 1],
-                    boxShadow: [
-                      "0 0 0 rgba(0,0,0,0)",
-                      "0 0 26px rgba(245,158,11,0.65)",
-                    ],
-                    transition: { duration: 0.45 },
-                  },
-                  shake: {
-                    x: [0, -4, 4, -3, 3, 0],
-                    boxShadow: [
-                      "0 0 0 rgba(0,0,0,0)",
-                      "0 0 22px rgba(16,185,129,0.55)",
-                      "0 0 0 rgba(0,0,0,0)",
-                    ],
-                    transition: { duration: 0.35 },
-                  },
-                  victory: {
-                    scale: [1, 1.08, 1],
-                    boxShadow: [
-                      "0 0 0 rgba(0,0,0,0)",
-                      "0 0 30px rgba(59,130,246,0.65)",
-                      "0 0 0 rgba(0,0,0,0)",
-                    ],
-                    transition: { duration: 0.6 },
-                  },
-                }}
-              >
+          <div className="arena-board relative min-h-[430px] overflow-hidden rounded-[1.75rem] border border-white/10 p-4">
+            {state.players.filter((player) => player.id !== youId).map((player, index, opponents) => (
+              <PlayerSeat key={player.id} player={player} active={state.currentPlayerId === player.id} position={seatPosition(index, opponents.length)} clock={clock} onCallUno={() => send({ type: "action", action: { type: "call_uno_on", targetId: player.id } })} />
+            ))}
+            <div className="absolute left-1/2 top-[58%] flex -translate-x-1/2 -translate-y-1/2 items-center gap-5 sm:gap-8">
+              <div className="pile-slot">
+                <div className="pointer-events-none scale-90"><CardBack /></div>
+                <span>Draw</span>
+              </div>
+              <motion.div className="pile-slot" initial={false} animate={pileControls} variants={{ slam:{ y:[-40,0,8,0],rotate:[-6,0],scale:[1.18,1,.98,1],transition:{duration:.45}}, shake:{x:[0,-5,5,-4,4,0],transition:{duration:.35}}, victory:{scale:[1,1.12,1],transition:{duration:.6}} }}>
                 <Card color={topCard.color} value={topCard.value} />
+                <span>Discard</span>
               </motion.div>
             </div>
+            <motion.div className="direction-orbit" animate={{ rotate: state.direction === 1 ? 360 : -360 }} transition={{ duration: 1.1, type: "spring" }}><span>➜</span></motion.div>
+            {state.pendingDraw2 > 0 && <motion.div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-amber-400 px-4 py-2 text-sm font-black text-slate-950" initial={{ scale:0 }} animate={{ scale:1 }}>Draw stack +{state.pendingDraw2}</motion.div>}
           </div>
 
           <div
-            className={`rounded-xl border bg-slate-900/60 p-4 ${
+            className={`relative rounded-2xl border bg-slate-900/60 p-4 ${
               isYourTurn
                 ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
                 : "border-slate-800"
             }`}
           >
-            <div className="text-sm text-slate-400">Your Hand</div>
-            <div className="text-xs text-slate-500">Cards: {hand.length}</div>
+            {isYourTurn && <motion.div layoutId="active-seat" className="absolute left-1/2 top-[-.75rem] z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#b8f36b] px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#121019]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#121019]"/>Your move</motion.div>}
+            <div className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-rose-400 font-black">{you?.name.slice(0,1).toUpperCase()}</div><div><div className="text-sm font-bold text-slate-100">{you?.name ?? "You"}</div><div className="text-xs text-slate-500">Your hand · {hand.length} cards</div></div></div><div className="text-xs text-slate-500">Bottom seat</div></div>
             <div className="card-hand mt-3">
               {hand.map((card, index) => (
                 <button
@@ -537,21 +541,6 @@ export default function OnlineGame({
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-            <div className="text-sm text-slate-400">Other Players</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {state.players
-                .filter((player) => player.id !== youId)
-                .map((player) => (
-                  <div key={player.id} className="flex flex-col items-center gap-2">
-                    <CardBack label={player.name} />
-                    <div className="text-xs text-slate-400">
-                      {player.handCount} cards
-                    </div>
-                  </div>
-                ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -1024,8 +1013,3 @@ export default function OnlineGame({
     </div>
   );
 }
-
-
-
-
-
