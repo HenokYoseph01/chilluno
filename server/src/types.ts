@@ -68,6 +68,10 @@ export interface PendingCoin {
 
 export type PendingMiniGame = PendingRps | PendingCoin;
 
+export type MiniGameResult =
+  | { type: "rps"; throwerId: PlayerId; targetId: PlayerId; throwerChoice: RpsChoice; targetChoice: RpsChoice; winnerId: PlayerId | null; loserId: PlayerId | null; penalty: number; revealUntil: number }
+  | { type: "coin"; throwerId: PlayerId; targetId: PlayerId; choice: CoinChoice; landed: CoinChoice; winnerId: PlayerId; loserId: PlayerId; penalty: number; revealUntil: number };
+
 export interface UnoWindowState {
   open: boolean;
   token: number;
@@ -84,6 +88,7 @@ export interface GameState {
   pendingWild: PendingWild | null;
   pendingDraw2: number;
   pendingMiniGame: PendingMiniGame | null;
+  miniGameResult: MiniGameResult | null;
   winnerId: PlayerId | null;
   unoCalled: Record<PlayerId, boolean>;
   unoWindow: Record<PlayerId, UnoWindowState>;

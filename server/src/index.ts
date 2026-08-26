@@ -17,6 +17,7 @@ import type {
   CoinChoice,
   DeckCard,
   PendingMiniGame,
+  MiniGameResult,
   PlayerId,
   Room,
   RpsChoice,
@@ -99,6 +100,7 @@ type PublicState = {
       pendingDraw2: number;
       pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
       pendingMiniGame: PublicPendingMiniGame;
+      miniGameResult: MiniGameResult | null;
       winnerId: PlayerId | null;
       discardTop: DeckCard;
       history: (
@@ -154,6 +156,7 @@ const unoTimers = new Map<string, NodeJS.Timeout>();
 const sessions = new Map<string, SessionInfo>();
 const disconnectTimers = new Map<PlayerId, NodeJS.Timeout>();
 const disconnectDeadlines = new Map<PlayerId, number>();
+const miniGameResultTimers = new Map<string, NodeJS.Timeout>();
 const UNO_WINDOW_MS = 5000;
 const RECONNECT_GRACE_MS = 45_000;
 
@@ -321,6 +324,7 @@ function buildPublicState(room: Room): PublicState {
     pendingDraw2: room.state.pendingDraw2,
     pendingWild: room.state.pendingWild,
     pendingMiniGame,
+    miniGameResult: room.state.miniGameResult,
     winnerId: room.state.winnerId,
     discardTop: top.card,
     history: room.state.history.slice(-25),
@@ -341,6 +345,9 @@ function pushRoomState(room: Room) {
 }
 
 function closeRoom(room: Room, reason: string) {
+  const resultTimer = miniGameResultTimers.get(room.id);
+  if (resultTimer) clearTimeout(resultTimer);
+  miniGameResultTimers.delete(room.id);
   if (room.code) {
     roomCodes.delete(room.code);
   }
@@ -406,6 +413,7 @@ function tryCreateRoom(size: 2 | 3 | 4) {
       pendingWild: null,
       pendingDraw2: 0,
       pendingMiniGame: null,
+      miniGameResult: null,
       winnerId: null,
       unoCalled: {},
       unoWindow: {},
@@ -473,6 +481,7 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
       pendingWild: null,
       pendingDraw2: 0,
       pendingMiniGame: null,
+      miniGameResult: null,
       winnerId: null,
       unoCalled: { [host.id]: true },
       unoWindow: { [host.id]: { open: false, token: 0 } },
@@ -513,6 +522,17 @@ function applyPendingResolution(room: Room, pending: PendingMiniGame) {
     room.state = resolveCoin(room, room.state, pending);
   }
   room.state = updateUnoWindows(room, room.state);
+  const existing = miniGameResultTimers.get(room.id);
+  if (existing) clearTimeout(existing);
+  const delay = Math.max(0, (room.state.miniGameResult?.revealUntil ?? Date.now()) - Date.now());
+  const timer = setTimeout(() => {
+    miniGameResultTimers.delete(room.id);
+    const liveRoom = rooms.get(room.id);
+    if (!liveRoom) return;
+    liveRoom.state = { ...liveRoom.state, miniGameResult: null };
+    pushRoomState(liveRoom);
+  }, delay);
+  miniGameResultTimers.set(room.id, timer);
 }
 
 wss.on("connection", (ws: WebSocket) => {
@@ -771,12 +791,24 @@ wss.on("connection", (ws: WebSocket) => {
           send(ws, { type: "error", message: "Game is finished." });
           return;
         }
+        if (room.state.miniGameResult) {
+          send(ws, { type: "error", message: "Wait for the minigame reveal to finish." });
+          return;
+        }
         const playerId = client.id;
         const isTurn = currentPlayerId(room) === playerId;
 
         if (message.action.type === "draw") {
           if (!isTurn) return;
           if (room.state.pendingWild || room.state.pendingMiniGame) return;
+          if (room.state.pendingDraw2 === 0) {
+            const hand = room.state.hands[playerId] ?? [];
+            const top = room.state.discardPile[room.state.discardPile.length - 1]?.card;
+            if (top && hand.some((card) => isPlayableForTurn(card, top, 0))) {
+              send(ws, { type: "error", message: "Play a matching card before drawing." });
+              return;
+            }
+          }
           if (room.state.pendingDraw2 > 0) {
             const count = room.state.pendingDraw2;
             room.state = drawCards(room.state, playerId, count);

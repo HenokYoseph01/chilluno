@@ -65,6 +65,7 @@ function PlayerSeat({ player, active, position, clock, onCallUno }: {
       </div>
       <div className="player-seat__identity"><div className="player-seat__avatar">{player.name.slice(0, 1).toUpperCase()}</div><div><strong>{player.name}</strong><small>{player.disconnected ? `Reconnecting${seconds !== null ? ` · ${seconds}s` : ""}` : `${player.handCount} card${player.handCount === 1 ? "" : "s"}`}</small></div></div>
       {player.unoWindow && !player.unoCalled && <button className="player-seat__uno" onClick={onCallUno}>Call UNO!</button>}
+      {player.handCount === 1 && player.unoCalled && <div className="player-seat__uno player-seat__uno--safe">UNO ✓</div>}
     </motion.div>
   );
 }
@@ -200,10 +201,17 @@ export default function OnlineGame({
     for (const player of state.players) {
       const previous = previousCountsRef.current.get(player.id) ?? player.handCount;
       const gained = player.handCount - previous;
-      if (gained > 0) enqueueEffect({ type: "draw", playerId: player.id, count: gained });
+      if (gained > 0) {
+        if (state.miniGameResult?.loserId === player.id) {
+          const timer = window.setTimeout(() => enqueueEffect({ type: "draw", playerId: player.id, count: gained }), Math.max(0, state.miniGameResult.revealUntil - Date.now() + 80));
+          visualTimersRef.current.push(timer);
+        } else {
+          enqueueEffect({ type: "draw", playerId: player.id, count: gained });
+        }
+      }
     }
     previousCountsRef.current = new Map(state.players.map((player) => [player.id, player.handCount]));
-  }, [state.history, state.players, state.currentPlayerId, enqueueEffect]);
+  }, [state.history, state.players, state.currentPlayerId, state.miniGameResult, enqueueEffect]);
 
   useEffect(() => {
     if (!state.players.some((player) => player.reconnectDeadline)) return;
@@ -219,6 +227,7 @@ export default function OnlineGame({
   const playerHasPlayable = hand.some((card) =>
     isPlayableForTurn(card, topCard, state.pendingDraw2),
   );
+  const canDraw = isYourTurn && !state.winnerId && !pendingWild && !pendingMiniGame && !state.miniGameResult && !playerHasPlayable;
   const opponents = state.players.filter((player) => player.id !== youId);
   function visualPosition(playerId: string) {
     if (playerId === youId) return "seat-bottom";
@@ -259,21 +268,10 @@ export default function OnlineGame({
   }, [pileControls, state.history, state.winnerId]);
 
   useEffect(() => {
-    const latestCoinEvent = [...state.history]
-      .reverse()
-      .find(
-        (entry) =>
-          entry.type === "event" &&
-          (entry.text.includes("Heads landed") ||
-            entry.text.includes("Tails landed")),
-      );
-    if (!latestCoinEvent || latestCoinEvent.type !== "event" || latestCoinEvent.id === lastCoinEventIdRef.current) {
-      return;
-    }
-    lastCoinEventIdRef.current = latestCoinEvent.id;
-    const result = latestCoinEvent.text.includes("Heads landed")
-      ? "heads"
-      : "tails";
+    const resultState = state.miniGameResult;
+    if (!resultState || resultState.type !== "coin" || resultState.revealUntil === lastCoinEventIdRef.current) return;
+    lastCoinEventIdRef.current = resultState.revealUntil;
+    const result = resultState.landed;
     if (coinFlipTimer.current !== null) {
       window.clearTimeout(coinFlipTimer.current);
       coinFlipTimer.current = null;
@@ -292,9 +290,9 @@ export default function OnlineGame({
       coinFlipClearTimer.current = window.setTimeout(() => {
         setCoinFlip({ active: false, result: null });
         coinFlipClearTimer.current = null;
-      }, 800);
+      }, Math.max(800, resultState.revealUntil - Date.now() - 1100));
     }, 1100);
-  }, [state.history]);
+  }, [state.miniGameResult]);
 
   useEffect(() => {
     setRpsSelection(null);
@@ -473,21 +471,6 @@ export default function OnlineGame({
                   <div>
                     UNO: {player.unoWindow ? (player.unoCalled ? "Called" : "Open") : "N/A"}
                   </div>
-                  {player.id !== youId &&
-                    player.unoWindow &&
-                    !player.unoCalled && (
-                      <button
-                        className="rounded-md bg-amber-500/20 px-2 py-1 text-amber-200 hover:bg-amber-500/30"
-                        onClick={() =>
-                          send({
-                            type: "action",
-                            action: { type: "call_uno_on", targetId: player.id },
-                          })
-                        }
-                      >
-                        Call UNO
-                      </button>
-                    )}
                 </div>
               </div>
             ))}
@@ -558,10 +541,10 @@ export default function OnlineGame({
               })}
             </AnimatePresence>
             <div className="absolute left-1/2 top-[58%] flex -translate-x-1/2 -translate-y-1/2 items-center gap-5 sm:gap-8">
-              <div className="pile-slot">
+              <motion.button className={`pile-slot draw-pile ${canDraw ? "draw-pile--ready" : ""}`} whileHover={canDraw ? { y:-8, rotate:-2 } : {}} whileTap={canDraw ? { scale:.93 } : {}} disabled={!canDraw} onClick={() => send({ type:"action", action:{ type:"draw" } })} title={canDraw ? (state.pendingDraw2 > 0 ? `Take ${state.pendingDraw2} cards` : "Draw a card") : playerHasPlayable ? "You already have a playable card" : "Wait for your turn"}>
                 <div className="pointer-events-none scale-90"><CardBack /></div>
-                <span>Draw</span>
-              </div>
+                <span>{state.pendingDraw2 > 0 && isYourTurn ? `Take +${state.pendingDraw2}` : "Draw"}</span>
+              </motion.button>
               <motion.div className="pile-slot" initial={false} animate={pileControls} variants={{ slam:{ y:[-40,0,8,0],rotate:[-6,0],scale:[1.18,1,.98,1],transition:{duration:.45}}, shake:{x:[0,-5,5,-4,4,0],transition:{duration:.35}}, victory:{scale:[1,1.12,1],transition:{duration:.6}} }}>
                 <Card color={topCard.color} value={topCard.value} />
                 <span>Discard</span>
@@ -579,6 +562,8 @@ export default function OnlineGame({
             }`}
           >
             {isYourTurn && <motion.div layoutId="active-seat" className="absolute left-1/2 top-[-.75rem] z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#b8f36b] px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#121019]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#121019]"/>Your move</motion.div>}
+            {you?.unoWindow && !you.unoCalled && <motion.button className="absolute right-4 top-14 z-20 rounded-full bg-amber-400 px-4 py-2 display-font text-sm font-black text-slate-950 shadow-[0_0_28px_rgba(251,191,36,.38)]" initial={{ scale:0, rotate:-10 }} animate={{ scale:[1,1.08,1], rotate:0 }} transition={{ scale:{repeat:Infinity,duration:1.1} }} onClick={() => send({ type:"action", action:{ type:"call_uno_self" } })}>UNO!</motion.button>}
+            {hand.length === 1 && you?.unoCalled && <div className="absolute right-4 top-14 rounded-full border border-[#b8f36b]/30 bg-[#b8f36b]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#b8f36b]">UNO called ✓</div>}
             <div className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-rose-400 font-black">{you?.name.slice(0,1).toUpperCase()}</div><div><div className="text-sm font-bold text-slate-100">{you?.name ?? "You"}</div><div className="text-xs text-slate-500">Your hand · {hand.length} cards</div></div></div><div className="text-xs text-slate-500">Bottom seat</div></div>
             <div className="card-hand mt-3">
               {hand.map((card, index) => (
@@ -604,37 +589,13 @@ export default function OnlineGame({
                     pendingMiniGame !== null ||
                     false
                   }
-                  className={`rounded-lg transition hover:-translate-y-1 disabled:opacity-35 ${invalidCard?.index === index ? "invalid-card" : ""}`}
+                  className={`hand-card-button ${isPlayableForTurn(card, topCard, state.pendingDraw2) && !(hand.length === 1 && !you?.unoCalled) ? "hand-card-button--playable" : "hand-card-button--unplayable"} ${invalidCard?.index === index ? "invalid-card" : ""}`}
                 >
                   <Card color={card.color} value={card.value} />
                 </button>
               ))}
             </div>
             <AnimatePresence>{invalidCard && <motion.div className="mx-auto mt-3 w-fit rounded-full border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-200" initial={{ opacity:0, y:5 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>{invalidCard.message}</motion.div>}</AnimatePresence>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button
-                className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-                onClick={() => send({ type: "action", action: { type: "draw" } })}
-                disabled={
-                  !isYourTurn ||
-                  !!state.winnerId ||
-                  pendingWild !== null ||
-                  pendingMiniGame !== null ||
-                  playerHasPlayable
-                }
-              >
-                Draw
-              </button>
-              <button
-                className="rounded-md bg-amber-500 px-3 py-2 text-sm text-black hover:bg-amber-400 disabled:opacity-50"
-                onClick={() =>
-                  send({ type: "action", action: { type: "call_uno_self" } })
-                }
-                disabled={!you?.unoWindow || you.unoCalled}
-              >
-                UNO
-              </button>
-            </div>
           </div>
 
         </div>
@@ -773,6 +734,30 @@ export default function OnlineGame({
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {state.miniGameResult?.type === "rps" && (
+        <div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/75 px-4 backdrop-blur-sm">
+          <motion.div className="glass-panel relative w-full max-w-2xl overflow-hidden rounded-3xl p-7 text-center" initial={{ opacity:0, scale:.94 }} animate={{ opacity:1, scale:1 }}>
+            <motion.div className="eyebrow" initial={{ opacity:1 }} animate={{ opacity:0 }} transition={{ delay:.75, duration:.2 }}>3 · 2 · 1</motion.div>
+            <h2 className="display-font mt-2 text-3xl font-black">SHOW YOUR HAND</h2>
+            <div className="mt-7 grid grid-cols-[1fr_auto_1fr] items-center gap-4">
+              {[
+                { id: state.miniGameResult.throwerId, choice: state.miniGameResult.throwerChoice },
+                { id: state.miniGameResult.targetId, choice: state.miniGameResult.targetChoice },
+              ].map((entry, index) => (
+                <motion.div key={entry.id} className={state.miniGameResult?.winnerId === entry.id ? "rps-choice rps-choice--winner" : "rps-choice"} initial={{ opacity:0, x:index === 0 ? -180 : 180, rotate:index === 0 ? -18 : 18 }} animate={{ opacity:1, x:0, rotate:0 }} transition={{ delay:.8, type:"spring", stiffness:260, damping:18 }}>
+                  <div className="rps-choice__sprite">{entry.choice === "rock" ? "✊" : entry.choice === "paper" ? "✋" : "✌️"}</div>
+                  <strong>{playerLabel(state, entry.id)}</strong><small>{entry.choice}</small>
+                </motion.div>
+              )).flatMap((item, index) => index === 0 ? [item, <motion.div key="versus" className="display-font text-xl font-black text-rose-300" initial={{ scale:0 }} animate={{ scale:1 }} transition={{ delay:1.05 }}>VS</motion.div>] : [item])}
+            </div>
+            <motion.div className="mt-7" initial={{ opacity:0, y:12 }} animate={{ opacity:1, y:0 }} transition={{ delay:1.25 }}>
+              <div className="display-font text-2xl font-black text-[#b8f36b]">{state.miniGameResult.winnerId ? `${playerLabel(state, state.miniGameResult.winnerId)} wins!` : "It's a tie!"}</div>
+              <div className="mt-1 text-sm text-slate-400">{state.miniGameResult.loserId ? `${playerLabel(state, state.miniGameResult.loserId)} draws ${state.miniGameResult.penalty}` : "No penalty this round."}</div>
+            </motion.div>
+          </motion.div>
         </div>
       )}
 
@@ -997,6 +982,7 @@ export default function OnlineGame({
                     : "Ready to flip."}
               </div>
               {coinFlip.result && !coinFlip.active && <motion.div className="mt-3 display-font text-2xl font-black text-amber-300" initial={{ scale:0 }} animate={{ scale:[0,1.2,1] }}>{coinFlip.result === "heads" ? "HEADS!" : "TAILS!"}</motion.div>}
+              {state.miniGameResult?.type === "coin" && coinFlip.result && !coinFlip.active && <motion.div className="mt-2" initial={{ opacity:0, y:8 }} animate={{ opacity:1, y:0 }}><strong className="text-[#b8f36b]">{playerLabel(state, state.miniGameResult.winnerId)} wins</strong><div className="text-xs text-slate-400">{playerLabel(state, state.miniGameResult.loserId)} draws {state.miniGameResult.penalty}</div></motion.div>}
               </div>
             </motion.div>
           </div>

@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
+import CardBack from "../components/CardBack";
 import { generateDeck, shuffleArray } from "../game/deckEngine";
 import type { Color, deckOutline } from "../types/cards";
 
@@ -454,6 +455,7 @@ export default function Game({
   const aiCallPlayerTimer = useRef<number | null>(null);
   const coinFlipTimer = useRef<number | null>(null);
   const coinFlipClearTimer = useRef<number | null>(null);
+  const aiCoinScheduledRef = useRef(false);
 
   const topCard = useMemo(
     () => game.discardPile[game.discardPile.length - 1].card,
@@ -477,6 +479,7 @@ export default function Game({
   const playerHasPlayable = playerHand.some((card) =>
     isPlayableForTurn(card, topCard, pendingDraw2),
   );
+  const canDrawFromPile = currentPlayer === "player" && !winner && !pendingWild && !pendingMiniGame && !playerHasPlayable;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -554,6 +557,7 @@ export default function Game({
     setUnoBanner(null);
     setRpsSelection(null);
     setCoinSelection(null);
+    aiCoinScheduledRef.current = false;
     if (unoBannerTimer.current !== null) {
       window.clearTimeout(unoBannerTimer.current);
       unoBannerTimer.current = null;
@@ -565,6 +569,14 @@ export default function Game({
     if (aiCallPlayerTimer.current !== null) {
       window.clearTimeout(aiCallPlayerTimer.current);
       aiCallPlayerTimer.current = null;
+    }
+    if (coinFlipTimer.current !== null) {
+      window.clearTimeout(coinFlipTimer.current);
+      coinFlipTimer.current = null;
+    }
+    if (coinFlipClearTimer.current !== null) {
+      window.clearTimeout(coinFlipClearTimer.current);
+      coinFlipClearTimer.current = null;
     }
   }
 
@@ -1191,8 +1203,12 @@ export default function Game({
   ]);
 
   useEffect(() => {
-    if (!pendingMiniGame || pendingMiniGame.type !== "coin") return;
-    if (pendingMiniGame.player !== "ai") return;
+    if (!pendingMiniGame || pendingMiniGame.type !== "coin" || pendingMiniGame.player !== "ai") {
+      aiCoinScheduledRef.current = false;
+      return;
+    }
+    if (pendingMiniGame.chosenColor || aiCoinScheduledRef.current || coinFlipTimer.current !== null) return;
+    aiCoinScheduledRef.current = true;
     const timer = setTimeout(() => {
       const aiChoice: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
       setGame((prev) => {
@@ -1213,7 +1229,12 @@ export default function Game({
         });
       startCoinFlip(aiChoice);
     }, 600);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (coinFlipTimer.current === null && !pendingMiniGame.chosenColor) {
+        aiCoinScheduledRef.current = false;
+      }
+    };
   }, [pendingMiniGame]);
 
   useEffect(() => {
@@ -1261,43 +1282,6 @@ export default function Game({
           >
             Back
           </button>
-          <button
-            className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-            onClick={() => drawCard("player")}
-            disabled={
-              currentPlayer !== "player" ||
-              !!winner ||
-              !!pendingWild ||
-              !!pendingMiniGame ||
-              playerHasPlayable
-            }
-          >
-            Draw
-          </button>
-          <button
-            className="rounded-md bg-amber-500 px-3 py-2 text-sm text-black hover:bg-amber-400 disabled:opacity-50"
-            onClick={() => {
-              if (unoWindow.player && !unoCalled.player) {
-                callUnoSelf("player");
-                notify("You called UNO!");
-              }
-            }}
-            disabled={!unoWindow.player || unoCalled.player}
-          >
-            UNO
-          </button>
-          <button
-            className="rounded-md bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600 disabled:opacity-50"
-            onClick={() => {
-              if (unoWindow.ai && !unoCalled.ai) {
-                callUnoOn("ai");
-                notify("UNO called on AI. It draws 2.");
-              }
-            }}
-            disabled={!unoWindow.ai || unoCalled.ai}
-          >
-            Call UNO (AI)
-          </button>
         </div>
       </div>
 
@@ -1310,7 +1294,7 @@ export default function Game({
           </motion.div>
         </div>
         <div
-          className={`glass-panel rounded-2xl p-4 ${
+          className={`glass-panel relative rounded-2xl p-4 ${
             currentPlayer === "ai"
               ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
               : "border-slate-800"
@@ -1326,10 +1310,13 @@ export default function Game({
               />
             ))}
           </div>
+          {unoWindow.ai && !unoCalled.ai && <motion.button className="mx-auto mt-2 rounded-full bg-amber-400 px-4 py-2 text-xs font-black text-slate-950" initial={{ scale:0 }} animate={{ scale:[1,1.08,1] }} transition={{ repeat:Infinity,duration:1.1 }} onClick={() => { callUnoOn("ai"); notify("UNO called on AI. It draws 2."); }}>Call UNO on AI!</motion.button>}
+          {aiHand.length === 1 && unoCalled.ai && <div className="mx-auto mt-2 w-fit rounded-full bg-[#b8f36b]/10 px-3 py-1 text-xs font-bold text-[#b8f36b]">AI called UNO ✓</div>}
         </div>
 
         <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-          <div className="text-sm text-slate-400">Discard</div>
+          <div className="text-sm text-slate-400">Table piles</div>
+          <motion.button className={`pile-slot draw-pile ${canDrawFromPile ? "draw-pile--ready" : ""}`} whileHover={canDrawFromPile ? { y:-7 } : {}} whileTap={canDrawFromPile ? { scale:.94 } : {}} disabled={!canDrawFromPile} onClick={() => drawCard("player")} title={canDrawFromPile ? "Draw from the deck" : playerHasPlayable ? "You have a playable card" : "Wait for your turn"}><CardBack/><span>{pendingDraw2 > 0 && currentPlayer === "player" ? `Take +${pendingDraw2}` : "Draw"}</span></motion.button>
           <motion.div
             initial={false}
             animate={pileControls}
@@ -1381,7 +1368,7 @@ export default function Game({
         </div>
 
         <div
-          className={`glass-panel rounded-2xl p-4 ${
+          className={`glass-panel relative rounded-2xl p-4 ${
             currentPlayer === "player"
               ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
               : "border-slate-800"
@@ -1398,16 +1385,16 @@ export default function Game({
                   currentPlayer !== "player" ||
                   !!winner ||
                   pendingWild !== null ||
-                  pendingMiniGame !== null ||
-                  (playerHand.length === 1 && !unoCalled.player) ||
-                  !isPlayableForTurn(val, topCard, pendingDraw2)
+                  pendingMiniGame !== null
                 }
-                className="rounded-lg transition disabled:cursor-not-allowed disabled:grayscale disabled:opacity-35"
+                className={`hand-card-button ${isPlayableForTurn(val, topCard, pendingDraw2) && !(playerHand.length === 1 && !unoCalled.player) ? "hand-card-button--playable" : "hand-card-button--unplayable"}`}
               >
                 <Card color={val.color} value={val.value} />
               </button>
             ))}
           </div>
+          {unoWindow.player && !unoCalled.player && <motion.button className="absolute right-4 top-12 rounded-full bg-amber-400 px-4 py-2 display-font text-sm font-black text-slate-950" initial={{ scale:0 }} animate={{ scale:[1,1.08,1] }} transition={{ repeat:Infinity,duration:1.1 }} onClick={() => { callUnoSelf("player"); notify("You called UNO!"); }}>UNO!</motion.button>}
+          {playerHand.length === 1 && unoCalled.player && <div className="absolute right-4 top-12 rounded-full bg-[#b8f36b]/10 px-3 py-1 text-xs font-bold text-[#b8f36b]">UNO called ✓</div>}
         </div>
       </div>
 
@@ -1797,43 +1784,6 @@ export default function Game({
             onClick={() => setShowExitModal(true)}
           >
             Back
-          </button>
-          <button
-            className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
-            onClick={() => drawCard("player")}
-            disabled={
-              currentPlayer !== "player" ||
-              !!winner ||
-              !!pendingWild ||
-              !!pendingMiniGame ||
-              playerHasPlayable
-            }
-          >
-            Draw
-          </button>
-          <button
-            className="rounded-md bg-amber-500 px-3 py-2 text-sm text-black hover:bg-amber-400 disabled:opacity-50"
-            onClick={() => {
-              if (unoWindow.player && !unoCalled.player) {
-                callUnoSelf("player");
-                notify("You called UNO!");
-              }
-            }}
-            disabled={!unoWindow.player || unoCalled.player}
-          >
-            UNO
-          </button>
-          <button
-            className="rounded-md bg-slate-700 px-3 py-2 text-sm hover:bg-slate-600 disabled:opacity-50"
-            onClick={() => {
-              if (unoWindow.ai && !unoCalled.ai) {
-                callUnoOn("ai");
-                notify("UNO called on AI. It draws 2.");
-              }
-            }}
-            disabled={!unoWindow.ai || unoCalled.ai}
-          >
-            Call UNO (AI)
           </button>
         </div>
       </div>

@@ -32,6 +32,10 @@ export type PublicPendingMiniGame =
     }
   | null;
 
+export type PublicMiniGameResult =
+  | { type: "rps"; throwerId: PlayerId; targetId: PlayerId; throwerChoice: "rock" | "paper" | "scissors"; targetChoice: "rock" | "paper" | "scissors"; winnerId: PlayerId | null; loserId: PlayerId | null; penalty: number; revealUntil: number }
+  | { type: "coin"; throwerId: PlayerId; targetId: PlayerId; choice: "heads" | "tails"; landed: "heads" | "tails"; winnerId: PlayerId; loserId: PlayerId; penalty: number; revealUntil: number };
+
 export type PublicState = {
   roomId: string;
   roomCode: string | null;
@@ -58,6 +62,7 @@ export type PublicState = {
       pendingDraw2: number;
       pendingWild: { playerId: PlayerId; value: "Wild" | "Wild4" } | null;
       pendingMiniGame: PublicPendingMiniGame;
+      miniGameResult: PublicMiniGameResult | null;
       winnerId: PlayerId | null;
       discardTop: deckOutline;
       history: (

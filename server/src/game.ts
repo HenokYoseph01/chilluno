@@ -129,6 +129,7 @@ export function initGame(room: Room): GameState {
     pendingWild: null,
     pendingDraw2: 0,
     pendingMiniGame: null,
+    miniGameResult: null,
     winnerId: null,
     unoCalled,
     unoWindow,
@@ -347,7 +348,11 @@ export function resolveRps(
   let nextState = state;
   if (result === "tie") {
     nextState = addHistoryEvent(
-      { ...nextState, pendingMiniGame: null },
+      { ...nextState, pendingMiniGame: null, miniGameResult: {
+        type: "rps", throwerId: pending.throwerId, targetId: pending.targetId,
+        throwerChoice: pending.throwerChoice, targetChoice: pending.targetChoice,
+        winnerId: null, loserId: null, penalty: 0, revealUntil: Date.now() + 3000,
+      } },
       "RPS tie. No penalty.",
     );
   } else {
@@ -358,6 +363,12 @@ export function resolveRps(
     nextState = {
       ...nextState,
       pendingMiniGame: null,
+      miniGameResult: {
+        type: "rps", throwerId: pending.throwerId, targetId: pending.targetId,
+        throwerChoice: pending.throwerChoice, targetChoice: pending.targetChoice,
+        winnerId: result === "thrower" ? pending.throwerId : pending.targetId,
+        loserId, penalty: 4, revealUntil: Date.now() + 3000,
+      },
     };
     nextState = addHistoryEvent(
       nextState,
@@ -415,6 +426,11 @@ export function resolveCoin(
   nextState = {
     ...nextState,
     pendingMiniGame: null,
+    miniGameResult: {
+      type: "coin", throwerId: pending.throwerId, targetId: pending.targetId,
+      choice: pending.throwerChoice, landed: flip, winnerId, loserId,
+      penalty: 3, revealUntil: Date.now() + 3000,
+    },
   };
   const throwerIndex = room.players.findIndex(
     (p) => p.id === pending.throwerId,
