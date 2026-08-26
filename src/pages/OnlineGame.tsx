@@ -780,7 +780,7 @@ export default function OnlineGame({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <motion.div
             key={coinImpactKey}
-            className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200"
+            className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200 shadow-2xl"
             animate={
               coinFlip.result && !coinFlip.active
                 ? {
@@ -791,6 +791,8 @@ export default function OnlineGame({
             }
             transition={{ duration: 0.35, ease: "easeInOut" }}
           >
+            <motion.img src="/chill-guy-coin-toss-v2.png" alt="Chill Guy preparing to toss a coin" className="pointer-events-none absolute -bottom-24 -left-10 hidden w-[390px] select-none md:block" initial={{ opacity:0, x:-30 }} animate={{ opacity:.9, x:0, y:[0,-4,0] }} transition={{ opacity:{duration:.35}, x:{duration:.45}, y:{duration:3,repeat:Infinity} }} />
+            <div className="relative z-10 md:ml-[48%]">
             <div className="text-base font-semibold text-slate-100">
               Heads or Tails
             </div>
@@ -924,6 +926,7 @@ export default function OnlineGame({
                 {coinSubmitted ? "Locked" : coinFlip.active ? "Flipping..." : "Flip"}
               </button>
             </div>
+            </div>
           </motion.div>
         </div>
       )}
@@ -933,7 +936,7 @@ export default function OnlineGame({
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
             <motion.div
               key={coinImpactKey}
-              className="rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 text-center text-sm text-slate-200"
+              className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/95 px-6 py-6 text-center text-sm text-slate-200 shadow-2xl"
               animate={
                 coinFlip.result && !coinFlip.active
                   ? {
@@ -944,6 +947,8 @@ export default function OnlineGame({
               }
               transition={{ duration: 0.35, ease: "easeInOut" }}
             >
+              <motion.img src="/chill-guy-coin-toss-v2.png" alt="Chill Guy tossing the coin" className="pointer-events-none absolute -bottom-24 -left-12 hidden w-[420px] select-none md:block" initial={{ opacity:0, x:-50, rotate:-3 }} animate={{ opacity:1, x:0, rotate:[-3,1,0], y: coinFlip.active ? [30,-8,0] : 0 }} transition={{ duration:coinFlip.active ? 1.05 : .45, ease:"easeOut" }} />
+              <div className="relative z-10 md:ml-[48%]">
               <div className="text-base font-semibold text-slate-100">
                 Heads or Tails
               </div>
@@ -990,6 +995,8 @@ export default function OnlineGame({
                   : coinFlip.result
                     ? `${coinFlip.result === "heads" ? "Heads" : "Tails"} landed.`
                     : "Ready to flip."}
+              </div>
+              {coinFlip.result && !coinFlip.active && <motion.div className="mt-3 display-font text-2xl font-black text-amber-300" initial={{ scale:0 }} animate={{ scale:[0,1.2,1] }}>{coinFlip.result === "heads" ? "HEADS!" : "TAILS!"}</motion.div>}
               </div>
             </motion.div>
           </div>
