@@ -23,8 +23,13 @@ export default function Online({ onBack }: { onBack: () => void }) {
     [],
   );
   const socketRef = useRef<WebSocket | null>(null);
+  const nameRef = useRef(name);
   const didOpenRef = useRef(false);
   const didUnmountRef = useRef(false);
+
+  useEffect(() => {
+    nameRef.current = name;
+  }, [name]);
 
   useEffect(() => {
     didUnmountRef.current = false;
@@ -36,8 +41,8 @@ export default function Online({ onBack }: { onBack: () => void }) {
       didOpenRef.current = true;
       setConnected(true);
       setError(null);
-      if (name.trim()) {
-        ws.send(JSON.stringify({ type: "set_name", name }));
+      if (nameRef.current.trim()) {
+        ws.send(JSON.stringify({ type: "set_name", name: nameRef.current }));
       }
     };
     ws.onclose = () => {
@@ -93,7 +98,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
       socketRef.current = null;
       ws.close();
     };
-  }, [wsUrl, name]);
+  }, [wsUrl]);
 
   function send(message: ClientMessage) {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
@@ -154,20 +159,21 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   if (roomState && clientId && roomState.status === "lobby") {
     return (
-      <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
+      <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-6 px-4 py-10">
         <div>
-        <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
-          Chill Coding Lounge
+        <div className="eyebrow">
+          Your private table
         </div>
-        <div className="text-3xl font-semibold">Chillno Private Room</div>
+        <div className="display-font text-4xl font-bold">Bring the chaos.</div>
         <div className="text-xs text-slate-500">
           Waiting for players...
         </div>
         </div>
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+        <div className="glass-panel rounded-3xl p-6 text-sm text-slate-200">
           <div className="text-slate-400">Room Code</div>
-          <div className="mt-2 text-2xl font-semibold tracking-widest text-emerald-300">
-            {roomState.roomCode ?? "—"}
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <div className="display-font rounded-2xl bg-black/25 px-5 py-3 text-3xl font-bold tracking-[.22em] text-[#b8f36b]">{roomState.roomCode ?? "—"}</div>
+            <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={async () => { const code = roomState.roomCode; if (!code) return; await navigator.clipboard.writeText(code); setError("Room code copied — send it to your crew."); }}>Copy code</button>
           </div>
           <div className="mt-3 text-xs text-slate-400">
             Players: {roomState.players.length} / {roomState.roomSize}
@@ -203,12 +209,12 @@ export default function Online({ onBack }: { onBack: () => void }) {
   }
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-10">
+      <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-10">
       <div>
-        <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
-          Chill Coding Lounge
+        <div className="eyebrow">
+          Multiplayer lounge
         </div>
-        <div className="text-3xl font-semibold">Chillno Online Lobby</div>
+        <div className="display-font mt-2 text-4xl font-bold">Find your table.</div>
         <div className="text-xs text-slate-500">
           Status: {connected ? "Connected" : "Connecting..."}
         </div>
@@ -220,7 +226,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
         </button>
       </div>
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+      <div className="glass-panel rounded-3xl p-6 text-sm text-slate-200">
         <div className="text-slate-400">Your Name (Required)</div>
         <input
           className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"

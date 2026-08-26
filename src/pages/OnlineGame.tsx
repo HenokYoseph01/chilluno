@@ -1,4 +1,5 @@
-﻿import { useEffect, useMemo, useRef, useState } from "react";
+﻿/* eslint-disable react-hooks/set-state-in-effect */
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
@@ -69,6 +70,7 @@ export default function OnlineGame({
   send: (message: ClientMessage) => void;
   onLeave: () => void;
 }) {
+  const [codeCopied, setCodeCopied] = useState(false);
   const [rpsSelection, setRpsSelection] = useState<"rock" | "paper" | "scissors" | null>(null);
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
@@ -97,7 +99,8 @@ export default function OnlineGame({
       "That was... not it.",
       "Try turning your monitor on.",
     ];
-    return pool[Math.floor(Math.random() * pool.length)];
+    const seed = [...state.winnerId].reduce((total, character) => total + character.charCodeAt(0), 0);
+    return pool[seed % pool.length];
   }, [state.winnerId]);
   const pileControls = useAnimation();
   const lastHistoryIdRef = useRef<number | null>(null);
@@ -153,7 +156,7 @@ export default function OnlineGame({
           (entry.text.includes("Heads landed") ||
             entry.text.includes("Tails landed")),
       );
-    if (!latestCoinEvent || latestCoinEvent.id === lastCoinEventIdRef.current) {
+    if (!latestCoinEvent || latestCoinEvent.type !== "event" || latestCoinEvent.id === lastCoinEventIdRef.current) {
       return;
     }
     lastCoinEventIdRef.current = latestCoinEvent.id;
@@ -282,18 +285,16 @@ export default function OnlineGame({
   }, [state.chat, youId]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-4 py-6 pb-28">
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-5 px-4 py-5 pb-28">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
-            Chill Coding Lounge
+          <div className="eyebrow">
+            Live table
           </div>
-          <div className="text-2xl font-semibold">Chillno Arena</div>
+          <div className="display-font text-2xl font-bold">Chillno After Dark</div>
           <div className="text-xs text-slate-500">
             Room ID: {state.roomId}
-            {state.isPrivate && state.roomCode
-              ? ` · Code: ${state.roomCode}`
-              : ""}
+            {state.isPrivate && state.roomCode ? <button className="ml-2 rounded-full border border-white/10 px-2 py-1 text-[#b8f36b] transition hover:bg-white/10" onClick={async () => { if (!state.roomCode) return; await navigator.clipboard.writeText(state.roomCode); setCodeCopied(true); window.setTimeout(() => setCodeCopied(false), 1800); }}>{codeCopied ? "Copied!" : `Code ${state.roomCode} · Copy`}</button> : null}
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
@@ -315,20 +316,20 @@ export default function OnlineGame({
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_2fr]">
+      <div className="table-felt grid gap-4 rounded-[2rem] border border-white/10 p-4 lg:grid-cols-[1fr_2fr] lg:p-6">
         <div className="lg:col-span-2">
-          <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200 shadow-lg shadow-emerald-500/10 animate-pulse">
+          <motion.div key={state.currentPlayerId} initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} className={`rounded-2xl border px-4 py-3 text-center text-sm font-bold ${isYourTurn ? "border-[#b8f36b]/50 bg-[#b8f36b]/10 text-[#dcffad] turn-glow" : "border-white/10 bg-white/5 text-slate-300"}`}>
             {isYourTurn
               ? "Your Turn — make it count."
               : `${playerLabel(state, state.currentPlayerId)}'s Turn`}
-          </div>
+          </motion.div>
         </div>
         {lastEvent && (
           <div className="lg:col-span-2 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
             {lastEvent}
           </div>
         )}
-        <div className="space-y-3 rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm">
+        <div className="glass-panel space-y-3 rounded-2xl p-4 text-sm">
           <div className="text-slate-400">Players</div>
           <div className="space-y-3">
             {state.players.map((player) => (
@@ -476,7 +477,7 @@ export default function OnlineGame({
           >
             <div className="text-sm text-slate-400">Your Hand</div>
             <div className="text-xs text-slate-500">Cards: {hand.length}</div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="card-hand mt-3">
               {hand.map((card, index) => (
                 <button
                   key={`${card.color}-${card.value}-${index}`}
@@ -1009,10 +1010,6 @@ export default function OnlineGame({
     </div>
   );
 }
-
-
-
-
 
 
 

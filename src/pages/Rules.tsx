@@ -14,16 +14,16 @@ export default function Rules({
 }) {
   const [difficulty, setDifficulty] = useState<AiDifficulty>("intermediate");
   return (
-    <div className="mx-auto flex min-h-screen max-w-3xl flex-col gap-6 px-4 py-10">
+    <div className="mx-auto flex min-h-screen max-w-4xl flex-col justify-center gap-6 px-4 py-10">
       <div>
-        <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
-          Chill Coding Lounge
+        <div className="eyebrow">
+          Know the chaos
         </div>
-        <div className="text-3xl font-semibold">
+        <div className="display-font mt-2 text-4xl font-bold">
           {mode === "ai" ? "Chillno Rules: vs AI" : "Chillno Rules: vs People"}
         </div>
       </div>
-      <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 text-sm text-slate-200">
+      <div className="glass-panel rounded-3xl p-6 text-sm text-slate-200">
         {mode === "ai" ? (
           <>
             <div className="font-semibold">Quick Rules</div>
@@ -100,7 +100,7 @@ export default function Rules({
         )}
       </div>
       {mode === "ai" && (
-        <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-sm text-slate-200">
+        <div className="glass-panel rounded-3xl p-5 text-sm text-slate-200">
           <div className="font-semibold">AI Difficulty</div>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
@@ -129,14 +129,14 @@ export default function Rules({
       )}
       <div className="flex items-center gap-2">
         <button
-          className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
+          className="secondary-button px-5 py-3 text-sm"
           onClick={onBack}
         >
           Back
         </button>
         {mode === "ai" && (
           <button
-            className="rounded-md bg-emerald-600 px-3 py-2 text-sm text-white hover:bg-emerald-500"
+            className="primary-button px-6 py-3 text-sm"
             onClick={() => onStartAI?.(difficulty)}
           >
             Start vs AI

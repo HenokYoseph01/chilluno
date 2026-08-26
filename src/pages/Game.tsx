@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/immutability, react-hooks/purity, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
@@ -339,8 +340,8 @@ function drawCards(
 ): GameState {
   let deck = [...state.deck];
   let discardPile = [...state.discardPile];
-  let playerHand = [...state.playerHand];
-  let aiHand = [...state.aiHand];
+  const playerHand = [...state.playerHand];
+  const aiHand = [...state.aiHand];
 
   for (let i = 0; i < count; i += 1) {
     ({ deck, discardPile } = refillDeckIfNeeded(deck, discardPile));
@@ -1213,13 +1214,13 @@ export default function Game({
   }, [pendingMiniGame, difficulty]);
 
   return (
-    <div className="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-4 pb-28 lg:py-8">
+    <div className="mx-auto flex min-h-screen max-w-6xl flex-col px-4 py-4 pb-28 lg:py-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="text-xs uppercase tracking-[0.3em] text-emerald-300/80">
-            Chill Coding Lounge
+          <div className="eyebrow">
+            Solo table · {difficulty}
           </div>
-          <div className="text-2xl font-semibold">Chillno Table</div>
+          <div className="display-font text-2xl font-bold">You vs. The House</div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -1274,16 +1275,16 @@ export default function Game({
         </div>
       </div>
 
-      <div className="mt-4 grid flex-1 gap-6 lg:grid-cols-[1fr_auto_1fr]">
+      <div className="table-felt mt-4 grid flex-1 gap-5 rounded-[2rem] border border-white/10 p-4 lg:grid-cols-[1fr_auto_1fr] lg:p-6">
         <div className="lg:col-span-3">
-          <div className="rounded-xl border border-emerald-400/50 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200 shadow-lg shadow-emerald-500/10 animate-pulse">
+          <motion.div key={currentPlayer} initial={{ opacity:0, y:-8 }} animate={{ opacity:1, y:0 }} className={`rounded-2xl border px-4 py-3 text-center text-sm font-bold ${currentPlayer === "player" ? "border-[#b8f36b]/50 bg-[#b8f36b]/10 text-[#dcffad] turn-glow" : "border-violet-400/30 bg-violet-500/10 text-violet-200"}`}>
             {currentPlayer === "player"
               ? "Your Turn — make it count."
               : "AI Turn"}
-          </div>
+          </motion.div>
         </div>
         <div
-          className={`rounded-xl border bg-slate-900/60 p-4 ${
+          className={`glass-panel rounded-2xl p-4 ${
             currentPlayer === "ai"
               ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
               : "border-slate-800"
@@ -1291,11 +1292,11 @@ export default function Game({
         >
           <div className="text-sm text-slate-400">AI</div>
           <div className="text-xs text-slate-500">Cards: {aiHand.length}</div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="card-hand mt-3">
             {aiHand.map((_, index) => (
-              <div
+              <motion.div
                 key={`ai-${index}`}
-                className="h-24 w-16 rounded-lg bg-slate-800/80 ring-1 ring-slate-700"
+                initial={{ opacity:0, y:-15 }} animate={{ opacity:1, y:0 }} transition={{ delay:Math.min(index*.025,.25) }} className="game-card card-back"
               />
             ))}
           </div>
@@ -1354,7 +1355,7 @@ export default function Game({
         </div>
 
         <div
-          className={`rounded-xl border bg-slate-900/60 p-4 ${
+          className={`glass-panel rounded-2xl p-4 ${
             currentPlayer === "player"
               ? "border-emerald-400/60 ring-2 ring-emerald-400/40 shadow-lg shadow-emerald-500/10"
               : "border-slate-800"
@@ -1362,7 +1363,7 @@ export default function Game({
         >
           <div className="text-sm text-slate-400">You</div>
           <div className="text-xs text-slate-500">Cards: {playerHand.length}</div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="card-hand mt-3">
             {playerHand.map((val, index) => (
               <button
                 key={`${val.color}-${val.value}-${index}`}
@@ -1374,7 +1375,7 @@ export default function Game({
                   pendingMiniGame !== null ||
                   !isPlayableForTurn(val, topCard, pendingDraw2)
                 }
-                className="rounded-lg transition hover:-translate-y-1 disabled:opacity-50"
+                className="rounded-lg transition disabled:cursor-not-allowed disabled:grayscale disabled:opacity-35"
               >
                 <Card color={val.color} value={val.value} />
               </button>

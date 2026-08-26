@@ -1,19 +1,15 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Syne:wght@600;700;800&display=swap');
 @import "tailwindcss";
-
-html,
-body,
-#root {
-  height: 100%;
-}
-
-body {
-  margin: 0;
-  background-color: #020617;
-}
-
-button,
-a,
-summary,
-[role="button"] {
-  cursor: pointer;
-}
+:root{font-family:"DM Sans",system-ui,sans-serif;color:#f8f7ff;background:#080711;font-synthesis:none;--ink:#080711;--violet:#8b5cf6;--coral:#ff6b6b;--lime:#b8f36b}
+html,body,#root{min-height:100%}body{margin:0;background:var(--ink);overflow-x:hidden}
+body::before{content:"";position:fixed;inset:0;z-index:-2;background:radial-gradient(circle at 12% 12%,rgba(111,68,220,.22),transparent 34%),radial-gradient(circle at 87% 82%,rgba(255,107,107,.13),transparent 31%),linear-gradient(145deg,#080711 0%,#111022 48%,#090817 100%)}
+body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.2;background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 140 140' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.18'/%3E%3C/svg%3E")}
+h1,h2,h3,.display-font{font-family:"Syne",sans-serif}button,a,summary,[role="button"]{cursor:pointer}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid rgba(184,243,107,.7);outline-offset:3px}
+.app-shell{position:relative;min-height:100vh;isolation:isolate}.glass-panel{border:1px solid rgba(255,255,255,.09);background:linear-gradient(145deg,rgba(27,23,46,.88),rgba(12,11,24,.82));box-shadow:0 24px 70px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.04);backdrop-filter:blur(18px)}
+.primary-button{border-radius:999px;background:linear-gradient(115deg,#9d75ff,#7550dc);box-shadow:0 10px 30px rgba(126,87,222,.27),inset 0 1px rgba(255,255,255,.25);color:white;font-weight:700;transition:transform .2s ease,filter .2s ease,box-shadow .2s ease}.primary-button:hover{transform:translateY(-2px);filter:brightness(1.08);box-shadow:0 14px 38px rgba(126,87,222,.38)}.primary-button:disabled{cursor:not-allowed;filter:grayscale(.5);opacity:.42;transform:none}.secondary-button{border:1px solid rgba(255,255,255,.11);border-radius:999px;background:rgba(255,255,255,.055);transition:.2s ease}.secondary-button:hover{background:rgba(255,255,255,.11);transform:translateY(-1px)}.eyebrow{color:#c4aaff;font-size:.68rem;font-weight:700;letter-spacing:.24em;text-transform:uppercase}
+.game-card{--card-color:#7457df;position:relative;width:5rem;height:7.35rem;flex:0 0 auto;overflow:hidden;border:5px solid #f9f5ed;border-radius:.9rem;color:white;background:var(--card-color);box-shadow:0 8px 18px rgba(0,0,0,.35),inset 0 0 0 1px rgba(0,0,0,.16);user-select:none}.game-card::before{content:"";position:absolute;inset:10% -22%;border-radius:50%;background:rgba(255,255,255,.92);transform:rotate(-25deg)}.card-red{--card-color:#e64d5f}.card-yellow{--card-color:#f4bd43;color:#241c14}.card-green{--card-color:#25a878}.card-blue{--card-color:#397fe4}.card-wild{background:conic-gradient(from 35deg,#e64d5f,#f4bd43,#25a878,#397fe4,#8b5cf6,#e64d5f)}
+.game-card__mark{position:absolute;inset:20% 7%;z-index:2;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--card-color);font-family:"Syne";font-size:1.8rem;font-weight:800;transform:rotate(-8deg);text-shadow:0 1px rgba(255,255,255,.3)}.card-wild .game-card__mark{color:#6f48d5}.game-card__mark small{font-size:.42rem;letter-spacing:.12em}.game-card__corner{position:absolute;top:.3rem;left:.32rem;z-index:3;font-family:"Syne";font-size:.7rem;font-weight:800}.game-card__corner--bottom{inset:auto .32rem .3rem auto;transform:rotate(180deg)}.game-card__shine{position:absolute;z-index:4;inset:0;background:linear-gradient(120deg,transparent 25%,rgba(255,255,255,.22) 45%,transparent 62%);transform:translateX(-110%);transition:transform .5s ease}.game-card:hover .game-card__shine{transform:translateX(110%)}.game-card--compact{width:3.9rem;height:5.8rem;border-width:4px}.game-card--compact .game-card__mark{font-size:1.3rem}
+.card-back{display:flex;align-items:center;justify-content:center;background:repeating-linear-gradient(45deg,#171329 0 7px,#211a3e 7px 14px)}.card-back::before{inset:.35rem;border:1px solid rgba(255,255,255,.28);border-radius:.55rem;background:radial-gradient(circle,rgba(139,92,246,.65),rgba(14,12,28,.88) 68%);transform:none}.card-back__orbit{position:absolute;z-index:1;width:3.2rem;height:3.2rem;border:1px solid rgba(184,243,107,.55);border-radius:50%;transform:rotate(35deg) scaleY(.4)}.card-back__brand{z-index:2;font-family:"Syne";font-size:1.8rem;font-weight:800;color:#d8c8ff}.card-back__label{position:absolute;z-index:2;bottom:.65rem;max-width:80%;overflow:hidden;color:#d5c9ed;font-size:.48rem;font-weight:700;letter-spacing:.09em;text-overflow:ellipsis;white-space:nowrap}
+.card-hand{display:flex;justify-content:center;align-items:flex-end;min-height:8.7rem;padding:1rem 2.5rem .25rem;overflow-x:auto;scrollbar-width:none}.card-hand::-webkit-scrollbar{display:none}.card-hand>*{margin-left:-1.35rem;transform-origin:bottom center}.card-hand>*:first-child{margin-left:0}.table-felt{background:radial-gradient(ellipse at center,rgba(75,54,125,.35),rgba(15,13,29,.68) 64%,rgba(7,6,14,.9)),linear-gradient(135deg,rgba(255,255,255,.025),transparent);box-shadow:inset 0 0 90px rgba(0,0,0,.45),0 30px 80px rgba(0,0,0,.25)}.turn-glow{box-shadow:0 0 0 1px rgba(184,243,107,.5),0 0 35px rgba(184,243,107,.13),inset 0 0 30px rgba(184,243,107,.05)}.turn-dot{box-shadow:0 0 14px currentColor}
+@media(max-width:640px){.game-card{width:4.25rem;height:6.35rem;border-width:4px}.game-card__mark{font-size:1.45rem}.card-hand{justify-content:flex-start;padding-inline:1.5rem}.card-hand>*{margin-left:-1rem}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important}}

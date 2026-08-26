@@ -1,31 +1,28 @@
+import { motion } from "framer-motion";
 import type { CardValue, Color } from "../types/cards";
 
-interface cardProps {
-  color: Color;
-  value: CardValue;
-}
+interface CardProps { color: Color; value: CardValue; compact?: boolean }
 
-const Card = ({ color, value }: cardProps) => {
-  const colorClass =
-    color === "red"
-      ? "bg-red-500 text-white"
-      : color === "yellow"
-        ? "bg-yellow-400 text-black"
-        : color === "green"
-          ? "bg-green-500 text-white"
-          : color === "blue"
-            ? "bg-blue-500 text-white"
-            : "bg-gradient-to-br from-red-500 via-yellow-400 to-blue-500 text-white";
-
-  return (
-    <div
-      className={`h-24 w-16 rounded-lg border-2 border-black/20 shadow-sm ${colorClass}`}
-    >
-      <div className="flex h-full items-center justify-center text-lg font-bold">
-        {value}
-      </div>
-    </div>
-  );
+const symbols: Partial<Record<CardValue, string>> = {
+  Skip: "⊘", Reverse: "↻", Draw2: "+2", Wild: "✦",
+  Wild4: "+4", RPS: "✊", HT: "◐",
+};
+const labels: Partial<Record<CardValue, string>> = {
+  Wild: "WILD", Wild4: "WILD", RPS: "BATTLE", HT: "FLIP",
 };
 
+const Card = ({ color, value, compact = false }: CardProps) => {
+  const colorClass = color === "red" ? "card-red" : color === "yellow" ? "card-yellow" : color === "green" ? "card-green" : color === "blue" ? "card-blue" : "card-wild";
+  const display = symbols[value] ?? value;
+  return (
+    <motion.div className={`game-card ${compact ? "game-card--compact" : ""} ${colorClass}`}
+      whileHover={{ y: -7, rotate: -1.5, scale: 1.04 }} whileTap={{ scale: 0.96 }}
+      transition={{ type: "spring", stiffness: 420, damping: 24 }}>
+      <span className="game-card__corner">{display}</span>
+      <div className="game-card__mark"><span>{display}</span>{labels[value] && <small>{labels[value]}</small>}</div>
+      <span className="game-card__corner game-card__corner--bottom">{display}</span>
+      <span className="game-card__shine" />
+    </motion.div>
+  );
+};
 export default Card;
