@@ -15,6 +15,9 @@ type WildValue = "Wild" | "Wild4";
 type RpsChoice = "rock" | "paper" | "scissors";
 type CoinChoice = "heads" | "tails";
 type AiDifficulty = "beginner" | "intermediate" | "insane";
+type MiniGameReveal =
+  | { type: "rps"; playerChoice: RpsChoice; aiChoice: RpsChoice; winner: Player | null; loser: Player | null; penalty: number }
+  | { type: "coin"; choice: CoinChoice; landed: CoinChoice; winner: Player; loser: Player; penalty: number };
 
 const COLORS: Color[] = ["red", "yellow", "green", "blue"];
 
@@ -408,6 +411,7 @@ export default function Game({
   const [coinSelection, setCoinSelection] = useState<CoinChoice | null>(null);
   const [matchReward, setMatchReward] = useState<MatchReward | null>(null);
   const [eventLocked, setEventLocked] = useState(false);
+  const [miniGameReveal, setMiniGameReveal] = useState<MiniGameReveal | null>(null);
   const recordedWinnerRef = useRef<Player | null>(null);
   const [coinFlip, setCoinFlip] = useState<{
     active: boolean;
@@ -427,6 +431,7 @@ export default function Game({
   const aiCoinScheduledRef = useRef(false);
   const eventLockTimer = useRef<number | null>(null);
   const eventLockUntilRef = useRef(0);
+  const miniGameRevealTimer = useRef<number | null>(null);
 
   function lockEvents(duration = 1100) {
     const until = Math.max(eventLockUntilRef.current, Date.now() + duration);
@@ -438,6 +443,16 @@ export default function Game({
       eventLockUntilRef.current = 0;
       eventLockTimer.current = null;
     }, Math.max(0, until - Date.now()));
+  }
+
+  function showMiniGameResult(result: MiniGameReveal) {
+    setMiniGameReveal(result);
+    lockEvents(5000);
+    if (miniGameRevealTimer.current !== null) window.clearTimeout(miniGameRevealTimer.current);
+    miniGameRevealTimer.current = window.setTimeout(() => {
+      setMiniGameReveal(null);
+      miniGameRevealTimer.current = null;
+    }, 5000);
   }
 
   const topCard = useMemo(
@@ -578,6 +593,11 @@ export default function Game({
       eventLockTimer.current = null;
     }
     eventLockUntilRef.current = 0;
+    if (miniGameRevealTimer.current !== null) {
+      window.clearTimeout(miniGameRevealTimer.current);
+      miniGameRevealTimer.current = null;
+    }
+    setMiniGameReveal(null);
     setEventLocked(false);
   }
 
@@ -745,11 +765,12 @@ export default function Game({
   }
 
   function resolveRps(playerChoice: RpsChoice) {
-    lockEvents(1900);
     const aiChoice: RpsChoice =
       (["rock", "paper", "scissors"] as const)[
         Math.floor(Math.random() * 3)
       ];
+    const result = resolveRpsWinner(playerChoice, aiChoice);
+    showMiniGameResult({ type: "rps", playerChoice, aiChoice, winner: result === "tie" ? null : result, loser: result === "tie" ? null : result === "player" ? "ai" : "player", penalty: result === "tie" ? 0 : 4 });
     setGame((prev) => {
       if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "rps") {
         return prev;
@@ -839,6 +860,11 @@ export default function Game({
   function resolveCoin(choice: CoinChoice, forcedFlip?: CoinChoice) {
     const flip: CoinChoice =
       forcedFlip ?? (Math.random() < 0.5 ? "heads" : "tails");
+    const thrower = game.pendingMiniGame?.type === "coin" ? game.pendingMiniGame.player : "player";
+    const throwerWon = choice === flip;
+    const loser: Player = throwerWon ? (thrower === "player" ? "ai" : "player") : thrower;
+    const resultWinner: Player = throwerWon ? thrower : loser === "player" ? "ai" : "player";
+    showMiniGameResult({ type: "coin", choice, landed: flip, winner: resultWinner, loser, penalty: 3 });
     setGame((prev) => {
       if (!prev.pendingMiniGame || prev.pendingMiniGame.type !== "coin") {
         return prev;
@@ -1423,6 +1449,7 @@ export default function Game({
 
       <AnimatePresence>{winner && matchReward && <motion.div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><motion.section role="dialog" aria-modal="true" aria-labelledby="solo-result-title" className="glass-panel w-full max-w-sm rounded-3xl p-6 text-center" initial={{ y:30, scale:.92 }} animate={{ y:0, scale:1 }}><div className="text-5xl">{winner === "player" ? "🏆" : "🎴"}</div><h2 id="solo-result-title" className="display-font mt-3 text-3xl font-black">{winner === "player" ? "You own the table!" : "The bot got this one"}</h2><p className="mt-2 text-sm text-slate-400">+{matchReward.xp} XP · Level {matchReward.levelAfter}</p>{matchReward.levelAfter > matchReward.levelBefore && <motion.div className="mt-3 rounded-full bg-[#b8f36b]/15 px-4 py-2 font-bold text-[#b8f36b]" initial={{ scale:0 }} animate={{ scale:[0,1.15,1] }}>Level up!</motion.div>}{matchReward.unlocked.map((id) => <motion.div key={id} className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3" initial={{ x:-20, opacity:0 }} animate={{ x:0, opacity:1 }}><span className="text-2xl">{achievementLabels[id].icon}</span><div className="text-xs font-bold text-amber-200">Achievement unlocked</div><div>{achievementLabels[id].title}</div></motion.div>)}<div className="mt-5 flex gap-2"><button className="secondary-button flex-1 px-4 py-3" onClick={onBack}>Menu</button><button className="primary-button flex-1 px-4 py-3" onClick={() => window.location.reload()}>Play again</button></div></motion.section></motion.div>}</AnimatePresence>
       <AnimatePresence>{eventLocked && <motion.div className="pointer-events-auto fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
+      <AnimatePresence>{miniGameReveal && <motion.div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 px-4 backdrop-blur-md" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><motion.section role="dialog" aria-modal="true" aria-labelledby="minigame-result-title" className="glass-panel relative w-full max-w-2xl overflow-hidden rounded-3xl p-7 text-center" initial={{ scale:.9, y:25 }} animate={{ scale:1, y:0 }}><div className="eyebrow">Minigame result</div><h2 id="minigame-result-title" className="display-font mt-2 text-3xl font-black">{miniGameReveal.winner ? `${miniGameReveal.winner === "player" ? "You win!" : "AI wins!"}` : "It’s a tie!"}</h2>{miniGameReveal.type === "rps" ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3"><div className={miniGameReveal.winner === "player" ? "rps-choice rps-choice--winner" : "rps-choice"}><RpsTosser choice={miniGameReveal.playerChoice} animate compact/><strong>You</strong><small>{miniGameReveal.playerChoice}</small></div><div className="display-font pb-16 text-xl font-black text-rose-300">VS</div><div className={miniGameReveal.winner === "ai" ? "rps-choice rps-choice--winner" : "rps-choice"}><RpsTosser choice={miniGameReveal.aiChoice} animate compact/><strong>AI</strong><small>{miniGameReveal.aiChoice}</small></div></div> : <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-5 text-left max-sm:grid-cols-1"><CoinTosser active={false} landed className="mx-auto"/><div className="text-center"><div className="display-font text-5xl font-black text-amber-300">{miniGameReveal.landed === "heads" ? "HEADS" : "TAILS"}</div><p className="mt-2 text-sm text-slate-400">{miniGameReveal.choice} was called.</p></div></div>}<p className="mt-5 text-sm text-slate-300">{miniGameReveal.loser ? `${miniGameReveal.loser === "player" ? "You draw" : "AI draws"} ${miniGameReveal.penalty} cards.` : "No penalty this time."}</p><motion.div className="mx-auto mt-5 h-1.5 max-w-xs origin-left rounded-full bg-gradient-to-r from-violet-500 to-[#b8f36b]" initial={{ scaleX:1 }} animate={{ scaleX:0 }} transition={{ duration:5, ease:"linear" }}/></motion.section></motion.div>}</AnimatePresence>
 
       {pendingWild && pendingWild.player === "player" && (
         <motion.div className="wild-picker fixed inset-0 z-50 flex items-center justify-center px-4" initial={{ opacity:0 }} animate={{ opacity:1 }}>
