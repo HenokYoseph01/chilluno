@@ -12,7 +12,7 @@
     "preview": "vite preview",
     "server:dev": "tsx watch server/src/index.ts",
     "server:build": "tsc -p server/tsconfig.json",
-    "server:start": "node server/dist/index.js"
+    "server:start": "npm run server:build && node server/dist/index.js"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

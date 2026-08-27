@@ -7,6 +7,15 @@ const DEFAULT_WS_URL = import.meta.env.DEV
   ? "ws://localhost:8787"
   : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 
+function isCompatibleRoomState(state: PublicState) {
+  const candidate = state as PublicState & Record<string, unknown>;
+  return Array.isArray(candidate.readyPlayerIds) &&
+    typeof candidate.scores === "object" && candidate.scores !== null &&
+    typeof candidate.stats === "object" && candidate.stats !== null &&
+    Array.isArray(candidate.reactions) &&
+    typeof candidate.eventLockedUntil === "number";
+}
+
 export default function Online({ onBack }: { onBack: () => void }) {
   const [connected, setConnected] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
@@ -95,10 +104,20 @@ export default function Online({ onBack }: { onBack: () => void }) {
         setQueueSize(message.size);
       }
       if (message.type === "room_joined") {
+        if (!isCompatibleRoomState(message.state)) {
+          setError("The multiplayer server is out of date. Restart it, then create the room again.");
+          setRoomState(null);
+          setHand([]);
+          return;
+        }
         setRoomState(message.state);
         setHand(message.hand);
       }
       if (message.type === "state") {
+        if (!isCompatibleRoomState(message.state)) {
+          setError("The multiplayer server is out of date. Restart it, then reconnect.");
+          return;
+        }
         setRoomState(message.state);
         setHand(message.hand);
       }
