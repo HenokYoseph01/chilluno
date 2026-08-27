@@ -5,6 +5,7 @@ import Card from "../components/Card";
 import CardBack from "../components/CardBack";
 import { generateDeck, shuffleArray } from "../game/deckEngine";
 import type { Color, deckOutline } from "../types/cards";
+import { actionTurnSteps, canPlayFinalCard, isPlayable, isPlayableForTurn, nextDirection, resolveRpsWinner as resolveSharedRpsWinner } from "../../shared/rules.js";
 
 type Player = "player" | "ai";
 type WildValue = "Wild" | "Wild4";
@@ -124,40 +125,12 @@ function initGame(): GameState {
   };
 }
 
-function isPlayable(card: deckOutline, top: deckOutline): boolean {
-  if (card.color === "wild" || card.value === "Wild" || card.value === "Wild4") {
-    return true;
-  }
-  if (card.value === "RPS" || card.value === "HT") {
-    return true;
-  }
-  return card.color === top.color || card.value === top.value;
-}
-
-function isPlayableForTurn(
-  card: deckOutline,
-  top: deckOutline,
-  pendingDraw2: number,
-): boolean {
-  if (pendingDraw2 > 0) {
-    return card.value === "Draw2";
-  }
-  return isPlayable(card, top);
-}
-
 function resolveRpsWinner(
   playerChoice: RpsChoice,
   aiChoice: RpsChoice,
 ): Player | "tie" {
-  if (playerChoice === aiChoice) return "tie";
-  if (
-    (playerChoice === "rock" && aiChoice === "scissors") ||
-    (playerChoice === "paper" && aiChoice === "rock") ||
-    (playerChoice === "scissors" && aiChoice === "paper")
-  ) {
-    return "player";
-  }
-  return "ai";
+  const result = resolveSharedRpsWinner(playerChoice, aiChoice);
+  return result === "thrower" ? "player" : result === "target" ? "ai" : "tie";
 }
 
 function addHistoryCard(
@@ -378,7 +351,6 @@ function finishPlay(
   card: deckOutline,
   chosenColor?: Color,
 ): GameState {
-  const isTwoPlayers = true;
   const cardToDiscard =
     card.color === "wild"
       ? { ...card, color: chosenColor ?? pickRandomColor() }
@@ -390,20 +362,9 @@ function finishPlay(
   nextState = addHistoryCard(nextState, cardToDiscard, player);
 
   let drawCount = 0;
-  let skip = false;
-  let direction = state.direction;
+  const turnSteps = actionTurnSteps(card.value, 2);
+  const direction = nextDirection(card.value, state.direction) as 1 | -1;
   let pendingDraw2 = state.pendingDraw2;
-
-  if (card.value === "Reverse") {
-    direction = direction === 1 ? -1 : 1;
-    if (isTwoPlayers) {
-      skip = true;
-    }
-  }
-
-  if (card.value === "Skip") {
-    skip = true;
-  }
 
   if (card.value === "Draw2") {
     pendingDraw2 += 2;
@@ -411,7 +372,6 @@ function finishPlay(
 
   if (card.value === "Wild4") {
     drawCount = 4;
-    skip = true;
   }
 
   nextState = { ...nextState, direction };
@@ -422,7 +382,7 @@ function finishPlay(
   }
 
   nextState.currentPlayer =
-    card.value === "Draw2" ? nextPlayer : skip ? player : nextPlayer;
+    card.value === "Draw2" ? nextPlayer : turnSteps === 2 ? player : nextPlayer;
   nextState.pendingDraw2 = pendingDraw2;
   nextState.actionNonce += 1;
   return nextState;
@@ -609,7 +569,7 @@ export default function Game({
       if (!card) {
         return prev;
       }
-      if (hand.length === 1 && !prev.unoCalled[player]) {
+      if (!canPlayFinalCard(hand.length, prev.unoCalled[player])) {
         return prev;
       }
       if (prev.pendingDraw2 > 0 && card.value !== "Draw2") {

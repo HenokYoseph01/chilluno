@@ -5,6 +5,7 @@ import Card from "../components/Card";
 import CardBack from "../components/CardBack";
 import type { deckOutline } from "../types/cards";
 import type { ActivePublicState, ClientMessage, PublicPlayer } from "../types/online";
+import { isPlayableForTurn } from "../../shared/rules.js";
 
 const COLORS = ["red", "yellow", "green", "blue"] as const;
 
@@ -15,27 +16,6 @@ type VisualEffect = {
   card?: deckOutline;
   count?: number;
 };
-
-function isPlayable(card: deckOutline, top: deckOutline): boolean {
-  if (card.color === "wild" || card.value === "Wild" || card.value === "Wild4") {
-    return true;
-  }
-  if (card.value === "RPS" || card.value === "HT") {
-    return true;
-  }
-  return card.color === top.color || card.value === top.value;
-}
-
-function isPlayableForTurn(
-  card: deckOutline,
-  top: deckOutline,
-  pendingDraw2: number,
-): boolean {
-  if (pendingDraw2 > 0) {
-    return card.value === "Draw2";
-  }
-  return isPlayable(card, top);
-}
 
 function playerLabel(state: ActivePublicState, id: string) {
   return state.players.find((player) => player.id === id)?.name ?? "Player";

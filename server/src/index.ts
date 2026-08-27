@@ -22,6 +22,7 @@ import type {
   Room,
   RpsChoice,
 } from "./types.js";
+import { canPlayFinalCard } from "../../shared/rules.js";
 
 type ClientMessage =
   | { type: "hello"; name?: string; sessionToken: string }
@@ -834,7 +835,7 @@ wss.on("connection", (ws: WebSocket) => {
           const hand = room.state.hands[playerId] ?? [];
           const card = hand[action.index];
           if (!card) return;
-          if (hand.length === 1 && !room.state.unoCalled[playerId]) {
+          if (!canPlayFinalCard(hand.length, room.state.unoCalled[playerId])) {
             send(ws, {
               type: "error",
               message: "Call UNO before playing your last card.",

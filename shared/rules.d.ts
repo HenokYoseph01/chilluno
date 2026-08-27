@@ -1,0 +1,9 @@
+export type SharedCard = { color: string; value: string | number };
+export type RpsChoice = "rock" | "paper" | "scissors";
+export function isWildCard(card: SharedCard): boolean;
+export function isPlayable(card: SharedCard, top: SharedCard): boolean;
+export function isPlayableForTurn(card: SharedCard, top: SharedCard, pendingDraw2: number): boolean;
+export function canPlayFinalCard(handCount: number, unoCalled: boolean): boolean;
+export function resolveRpsWinner(throwerChoice: RpsChoice, targetChoice: RpsChoice): "thrower" | "target" | "tie";
+export function actionTurnSteps(value: SharedCard["value"], playerCount: number): 1 | 2;
+export function nextDirection(value: SharedCard["value"], direction: 1 | -1): number;
