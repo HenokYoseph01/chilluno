@@ -33,6 +33,8 @@ type ClientMessage =
   | { type: "leave_lobby" }
   | { type: "leave_room" }
   | { type: "play_again" }
+  | { type: "set_ready"; ready: boolean }
+  | { type: "start_private" }
   | { type: "chat"; text: string }
   | {
       type: "action";
@@ -76,6 +78,8 @@ type PublicState = {
   isPrivate: boolean;
   status: "lobby" | "playing" | "finished";
   rematchVotes: PlayerId[];
+  hostId: PlayerId | null;
+  readyPlayerIds: PlayerId[];
   chat: {
     id: number;
     playerId: PlayerId;
@@ -145,6 +149,7 @@ type SessionInfo = {
   nameSet: boolean;
   roomId: string | null;
   queueSize: 2 | 3 | 4 | null;
+  lastSeen: number;
 };
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -160,6 +165,8 @@ const disconnectDeadlines = new Map<PlayerId, number>();
 const miniGameResultTimers = new Map<string, NodeJS.Timeout>();
 const UNO_WINDOW_MS = 5000;
 const RECONNECT_GRACE_MS = 45_000;
+const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const socketHeartbeats = new Map<WebSocket, number>();
 
 function send(ws: WebSocket, message: ServerMessage) {
   if (ws.readyState === ws.OPEN) {
@@ -198,6 +205,7 @@ function syncSession(client: ClientInfo) {
     nameSet: client.nameSet,
     roomId: client.roomId,
     queueSize: client.queueSize,
+    lastSeen: Date.now(),
   });
 }
 
@@ -268,6 +276,8 @@ function buildPublicState(room: Room): PublicState {
       isPrivate: room.isPrivate,
       status: room.status,
       rematchVotes: [...room.rematchVotes],
+      hostId: room.hostId,
+      readyPlayerIds: [...room.readyPlayers],
       chat: room.chat.slice(-50),
       players: room.players.map((player) => ({
         id: player.id,
@@ -310,6 +320,8 @@ function buildPublicState(room: Room): PublicState {
     isPrivate: room.isPrivate,
     status: room.status,
     rematchVotes: [...room.rematchVotes],
+    hostId: room.hostId,
+    readyPlayerIds: [...room.readyPlayers],
     chat: room.chat.slice(-50),
     players: room.players.map((player) => ({
       id: player.id,
@@ -377,6 +389,7 @@ function removeFromQueues(playerId: PlayerId) {
 function startRoom(room: Room) {
   room.status = "playing";
   room.rematchVotes.clear();
+  room.readyPlayers.clear();
   room.state = initGame(room);
   pushRoomState(room);
 }
@@ -402,6 +415,8 @@ function tryCreateRoom(size: 2 | 3 | 4) {
     size,
     players: roomPlayers,
     rematchVotes: new Set<PlayerId>(),
+    hostId: null,
+    readyPlayers: new Set<PlayerId>(),
     chat: [],
     state: {
       deck: [],
@@ -470,6 +485,8 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
       { id: host.id, name: host.name, connected: true, disconnectedAt: null, hand: [] },
     ],
     rematchVotes: new Set<PlayerId>(),
+    hostId: host.id,
+    readyPlayers: new Set<PlayerId>(),
     chat: [],
     state: {
       deck: [],
@@ -537,6 +554,8 @@ function applyPendingResolution(room: Room, pending: PendingMiniGame) {
 }
 
 wss.on("connection", (ws: WebSocket) => {
+  socketHeartbeats.set(ws, Date.now());
+  ws.on("pong", () => socketHeartbeats.set(ws, Date.now()));
   const id = randomUUID();
   const client: ClientInfo = {
     id,
@@ -705,11 +724,7 @@ wss.on("connection", (ws: WebSocket) => {
         state: buildPublicState(room),
         hand: [],
       });
-      if (room.players.length === room.size) {
-        startRoom(room);
-      } else {
-        pushRoomState(room);
-      }
+      pushRoomState(room);
       return;
     }
 
@@ -724,6 +739,7 @@ wss.on("connection", (ws: WebSocket) => {
     if (message.type === "leave_room") {
       withRoom(client, (room) => {
         room.rematchVotes.delete(client.id);
+        room.readyPlayers.delete(client.id);
         clearUnoTimer(room.id, client.id);
         room.players = room.players.filter((p) => p.id !== client.id);
         delete room.state.hands[client.id];
@@ -735,6 +751,9 @@ wss.on("connection", (ws: WebSocket) => {
           }
           closeRoom(room, "Room closed (not enough players).");
           return;
+        }
+        if (room.hostId === client.id) {
+          room.hostId = room.players[0]?.id ?? null;
         }
         room.state = addHistoryEvent(
           room.state,
@@ -760,6 +779,33 @@ wss.on("connection", (ws: WebSocket) => {
           return;
         }
         pushRoomState(room);
+      });
+      return;
+    }
+
+    if (message.type === "set_ready") {
+      withRoom(client, (room) => {
+        if (room.status !== "lobby" || !room.isPrivate) return;
+        if (message.ready) room.readyPlayers.add(client.id);
+        else room.readyPlayers.delete(client.id);
+        pushRoomState(room);
+      });
+      return;
+    }
+
+    if (message.type === "start_private") {
+      withRoom(client, (room) => {
+        if (room.status !== "lobby" || !room.isPrivate || room.hostId !== client.id) return;
+        if (room.players.length < 2) {
+          send(ws, { type: "error", message: "At least two players are required." });
+          return;
+        }
+        const everyoneReady = room.players.every((player) => room.readyPlayers.has(player.id));
+        if (!everyoneReady) {
+          send(ws, { type: "error", message: "Everyone must be ready before starting." });
+          return;
+        }
+        startRoom(room);
       });
       return;
     }
@@ -1011,6 +1057,7 @@ wss.on("connection", (ws: WebSocket) => {
   });
 
   ws.on("close", () => {
+    socketHeartbeats.delete(ws);
     clients.delete(ws);
     const replacement = [...clients.values()].find(
       (candidate) => candidate.id === client.id,
@@ -1046,6 +1093,8 @@ wss.on("connection", (ws: WebSocket) => {
 
           if (liveRoom.status === "lobby") {
             liveRoom.players = liveRoom.players.filter((entry) => entry.id !== client.id);
+            liveRoom.readyPlayers.delete(client.id);
+            if (liveRoom.hostId === client.id) liveRoom.hostId = liveRoom.players[0]?.id ?? null;
             if (liveRoom.players.length === 0) {
               closeRoom(liveRoom, "Room closed.");
               return;
@@ -1076,5 +1125,18 @@ wss.on("connection", (ws: WebSocket) => {
     broadcastLobbyState();
   });
 });
+
+const maintenanceTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [ws, lastSeen] of socketHeartbeats) {
+    if (now - lastSeen > 65_000) ws.terminate();
+    else if (ws.readyState === WebSocket.OPEN) ws.ping();
+  }
+  for (const [token, session] of sessions) {
+    const connected = [...clients.values()].some((client) => client.sessionToken === token);
+    if (!connected && now - session.lastSeen > SESSION_TTL_MS) sessions.delete(token);
+  }
+}, 30_000);
+maintenanceTimer.unref();
 
 console.log(`WebSocket server running on ws://localhost:${PORT}`);

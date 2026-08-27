@@ -112,6 +112,8 @@ export interface Room {
   status: "lobby" | "playing" | "finished";
   rematchVotes: Set<PlayerId>;
   chat: ChatMessage[];
+  hostId: PlayerId | null;
+  readyPlayers: Set<PlayerId>;
 }
 
 export interface ChatMessage {

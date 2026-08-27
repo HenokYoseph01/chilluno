@@ -9,15 +9,16 @@ export default function Online({ onBack }: { onBack: () => void }) {
   const [connected, setConnected] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [clientId, setClientId] = useState<string | null>(null);
-  const [name, setName] = useState("");
+  const inviteCode = useMemo(() => window.location.pathname.match(/^\/room\/([A-Za-z0-9]+)$/)?.[1]?.toUpperCase() ?? "", []);
+  const [name, setName] = useState(() => window.localStorage.getItem("chillno-name") ?? "");
   const [queueSize, setQueueSize] = useState<2 | 3 | 4 | null>(null);
   const [desiredPlayers, setDesiredPlayers] = useState<2 | 3 | 4>(2);
   const [queues, setQueues] = useState<LobbyQueue[]>([]);
   const [roomState, setRoomState] = useState<PublicState | null>(null);
   const [hand, setHand] = useState<deckOutline[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [privateCode, setPrivateCode] = useState("");
-  const [lobbyTab, setLobbyTab] = useState<"public" | "private">("public");
+  const [privateCode, setPrivateCode] = useState(inviteCode);
+  const [lobbyTab, setLobbyTab] = useState<"public" | "private">(inviteCode ? "private" : "public");
   const nameReady = name.trim().length > 0;
   const wsUrl = useMemo(
     () => import.meta.env.VITE_WS_URL ?? DEFAULT_WS_URL,
@@ -32,7 +33,12 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   useEffect(() => {
     nameRef.current = name;
+    if (name.trim()) window.localStorage.setItem("chillno-name", name.trim());
   }, [name]);
+
+  function inviteUrl(code: string) {
+    return `${window.location.origin}/room/${code}`;
+  }
 
   useEffect(() => {
     didUnmountRef.current = false;
@@ -168,6 +174,9 @@ export default function Online({ onBack }: { onBack: () => void }) {
   }
 
   if (roomState && clientId && roomState.status === "lobby") {
+    const isHost = roomState.hostId === clientId;
+    const youReady = roomState.readyPlayerIds.includes(clientId);
+    const everyoneReady = roomState.players.length >= 2 && roomState.players.every((player) => roomState.readyPlayerIds.includes(player.id));
     return (
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-6 px-4 py-10">
         <div>
@@ -183,20 +192,23 @@ export default function Online({ onBack }: { onBack: () => void }) {
           <div className="text-slate-400">Room Code</div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="display-font rounded-2xl bg-black/25 px-5 py-3 text-3xl font-bold tracking-[.22em] text-[#b8f36b]">{roomState.roomCode ?? "—"}</div>
-            <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={async () => { const code = roomState.roomCode; if (!code) return; await navigator.clipboard.writeText(code); setError("Room code copied — send it to your crew."); }}>Copy code</button>
+            <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={async () => { const code = roomState.roomCode; if (!code) return; await navigator.clipboard.writeText(inviteUrl(code)); setError("Invite link copied — send it to your crew."); }}>Copy invite</button>
+            {roomState.roomCode && typeof navigator.share === "function" && <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={() => navigator.share({ title:"Join my Chillno room", text:"Pull up to my Chillno table", url:inviteUrl(roomState.roomCode!) })}>Share</button>}
           </div>
           <div className="mt-3 text-xs text-slate-400">
             Players: {roomState.players.length} / {roomState.roomSize}
           </div>
           <div className="mt-4 space-y-2 text-xs text-slate-300">
             {roomState.players.map((player) => (
-              <div key={player.id}>
-                {player.name}
-                {player.id === clientId ? " (You)" : ""}
+              <div key={player.id} className="flex items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-3">
+                <span>{player.name}{player.id === clientId ? " (You)" : ""}{player.id === roomState.hostId ? " · Host" : ""}</span>
+                <span className={roomState.readyPlayerIds.includes(player.id) ? "text-[#b8f36b]" : "text-slate-500"}>{roomState.readyPlayerIds.includes(player.id) ? "Ready ✓" : "Not ready"}</span>
               </div>
             ))}
           </div>
           <div className="mt-4 flex items-center gap-2">
+            <button className={youReady ? "secondary-button px-4 py-2 text-sm" : "primary-button px-4 py-2 text-sm"} onClick={() => send({ type:"set_ready", ready:!youReady })}>{youReady ? "Not ready" : "I'm ready"}</button>
+            {isHost && <button className="primary-button px-4 py-2 text-sm disabled:opacity-40" disabled={!everyoneReady} onClick={() => send({ type:"start_private" })}>Start game</button>}
             <button
               className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
               onClick={() => {
