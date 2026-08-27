@@ -24,7 +24,7 @@ export default function Menu({ onSelectAI, onSelectOnline, onSelectPeopleRules }
       <motion.div className="pointer-events-none absolute -right-24 top-10 h-80 w-80 rounded-full bg-violet-600/15 blur-[90px]" animate={{ scale:[1,1.15,1], y:[0,24,0] }} transition={{ duration:8, repeat:Infinity }} />
       <div className="grid w-full items-center gap-14 lg:grid-cols-[1.05fr_.95fr]">
         <motion.main initial={{ opacity:0, x:-28 }} animate={{ opacity:1, x:0 }} transition={{ duration:.65 }}>
-          <div className="eyebrow">A card game with main-character energy</div>
+          <div className="eyebrow">Not gonna lie, I think you might lose your friendship and your sanity here gang</div>
           <h1 className="mt-5 max-w-2xl text-6xl font-black leading-[.92] tracking-[-.06em] sm:text-7xl lg:text-8xl">PLAY LOUD.<br/><span className="bg-gradient-to-r from-[#b8f36b] via-[#dbffab] to-[#ffb071] bg-clip-text text-transparent">STAY CHILL.</span></h1>
           <p className="mt-7 max-w-lg text-base leading-7 text-slate-300">Classic color chaos, unfair friendships, and just enough luck to demand one more round.</p>
           <div className="mt-9 flex flex-wrap gap-3"><motion.button whileTap={{ scale:.96 }} className="primary-button px-7 py-4" onClick={onSelectOnline}>Play with friends <span className="ml-2">↗</span></motion.button><motion.button whileTap={{ scale:.96 }} className="secondary-button px-7 py-4 font-semibold" onClick={onSelectAI}>Challenge the bot</motion.button></div>

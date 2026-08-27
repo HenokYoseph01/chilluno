@@ -1349,7 +1349,7 @@ export default function Game({
         >
           <div className="text-sm text-slate-400">AI</div>
           <div className="text-xs text-slate-500">Cards: {aiHand.length}</div>
-          <div className="card-hand mt-3">
+          <div className="card-hand opponent-hand mt-3">
             {aiHand.map((_, index) => (
               <motion.div
                 key={`ai-${index}`}
@@ -1361,7 +1361,7 @@ export default function Game({
           {aiHand.length === 1 && unoCalled.ai && <div className="mx-auto mt-2 w-fit rounded-full bg-[#b8f36b]/10 px-3 py-1 text-xs font-bold text-[#b8f36b]">AI called UNO ✓</div>}
         </div>
 
-        <div className="flex flex-col items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
+        <div className="table-piles flex flex-col items-center gap-4 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
           <div className="text-sm text-slate-400">Table piles</div>
           <motion.button className={`pile-slot draw-pile ${canDrawFromPile ? "draw-pile--ready" : ""}`} whileHover={canDrawFromPile ? { y:-7 } : {}} whileTap={canDrawFromPile ? { scale:.94 } : {}} disabled={!canDrawFromPile} onClick={() => drawCard("player")} title={canDrawFromPile ? "Draw from the deck" : playerHasPlayable ? "You have a playable card" : "Wait for your turn"}><CardBack/><span>{pendingDraw2 > 0 && currentPlayer === "player" ? `Take +${pendingDraw2}` : "Draw"}</span></motion.button>
           <motion.div
@@ -1561,7 +1561,7 @@ export default function Game({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <motion.div
             key={coinImpactKey}
-            className="relative min-h-[350px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-5 pl-56 text-sm text-slate-200 max-sm:pt-52 max-sm:pl-5"
+            className="coin-dialog relative min-h-[350px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-5 pl-56 text-sm text-slate-200"
             animate={
               coinFlip.result && !coinFlip.active
                 ? {
@@ -1723,7 +1723,7 @@ export default function Game({
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
             <motion.div
               key={coinImpactKey}
-              className="relative min-h-[320px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 pl-52 text-center text-sm text-slate-200 max-sm:min-h-[430px] max-sm:pt-52 max-sm:pl-6"
+              className="coin-dialog relative min-h-[320px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 pl-52 text-center text-sm text-slate-200"
               animate={
                 coinFlip.result && !coinFlip.active
                   ? {
