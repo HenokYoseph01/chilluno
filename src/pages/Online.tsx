@@ -3,7 +3,9 @@ import OnlineGame from "./OnlineGame";
 import type { ClientMessage, LobbyQueue, PublicState, ServerMessage } from "../types/online";
 import type { deckOutline } from "../types/cards";
 
-const DEFAULT_WS_URL = "ws://localhost:8787";
+const DEFAULT_WS_URL = import.meta.env.DEV
+  ? "ws://localhost:8787"
+  : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
 
 export default function Online({ onBack }: { onBack: () => void }) {
   const [connected, setConnected] = useState(false);

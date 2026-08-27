@@ -87,6 +87,7 @@ type PublicState = {
   roundNumber: number;
   stats: Record<PlayerId, PlayerStats>;
   reactions: { id: number; playerId: PlayerId; emoji: string; timestamp: number }[];
+  eventLockedUntil: number;
   chat: {
     id: number;
     playerId: PlayerId;
@@ -160,7 +161,9 @@ type SessionInfo = {
 };
 
 const PORT = Number(process.env.PORT ?? 8787);
-const wss = new WebSocketServer({ port: PORT });
+const MAX_MESSAGE_BYTES = 16 * 1024;
+const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean));
+const wss = new WebSocketServer({ port: PORT, maxPayload: MAX_MESSAGE_BYTES });
 const clients = new Map<WebSocket, ClientInfo>();
 const rooms = new Map<string, Room>();
 const queues: Record<2 | 3 | 4, PlayerId[]> = { 2: [], 3: [], 4: [] };
@@ -175,9 +178,34 @@ const RECONNECT_GRACE_MS = 45_000;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const socketHeartbeats = new Map<WebSocket, number>();
 const lastReactionAt = new Map<string, number>();
+const messageWindows = new Map<WebSocket, { startedAt: number; count: number }>();
 
 function emptyStats(): PlayerStats {
   return { cardsPlayed: 0, cardsDrawn: 0, unoCalls: 0, unoChallenges: 0, rpsWins: 0, coinWins: 0, roundsWon: 0, matchesWon: 0 };
+}
+
+function isClientMessage(value: unknown): value is ClientMessage {
+  if (!value || typeof value !== "object" || !("type" in value) || typeof value.type !== "string") return false;
+  const message = value as Record<string, unknown>;
+  if (message.type === "hello") return typeof message.sessionToken === "string" && (message.name === undefined || typeof message.name === "string");
+  if (message.type === "set_name") return typeof message.name === "string";
+  if (message.type === "join_lobby" || message.type === "create_private") return message.desiredPlayers === 2 || message.desiredPlayers === 3 || message.desiredPlayers === 4;
+  if (message.type === "join_private") return typeof message.code === "string";
+  if (message.type === "set_ready") return typeof message.ready === "boolean";
+  if (message.type === "chat") return typeof message.text === "string";
+  if (message.type === "reaction") return typeof message.emoji === "string";
+  if (message.type === "action") {
+    if (!message.action || typeof message.action !== "object") return false;
+    const action = message.action as Record<string, unknown>;
+    if (action.type === "draw" || action.type === "call_uno_self") return true;
+    if (action.type === "play") return Number.isInteger(action.index) && Number(action.index) >= 0;
+    if (action.type === "call_uno_on") return typeof action.targetId === "string";
+    if (action.type === "choose_wild" || action.type === "set_mini_color") return ["red", "yellow", "green", "blue"].includes(action.color as string);
+    if (action.type === "rps_choice") return ["rock", "paper", "scissors"].includes(action.choice as string);
+    if (action.type === "coin_choice") return action.choice === "heads" || action.choice === "tails";
+    return false;
+  }
+  return ["leave_lobby", "leave_room", "play_again", "start_private"].includes(message.type as string);
 }
 
 function send(ws: WebSocket, message: ServerMessage) {
@@ -188,6 +216,21 @@ function send(ws: WebSocket, message: ServerMessage) {
 
 function playerName(room: Room, id: PlayerId) {
   return room.players.find((p) => p.id === id)?.name ?? "Player";
+}
+
+function handCounts(room: Room) {
+  return Object.fromEntries(room.players.map((player) => [player.id, room.state.hands[player.id]?.length ?? 0]));
+}
+
+function recordAutomaticDraws(room: Room, before: Record<PlayerId, number>) {
+  for (const player of room.players) {
+    const gained = (room.state.hands[player.id]?.length ?? 0) - (before[player.id] ?? 0);
+    if (gained > 0 && room.stats[player.id]) room.stats[player.id].cardsDrawn += gained;
+  }
+}
+
+function lockRoomEvents(room: Room, duration: number) {
+  room.eventLockedUntil = Math.max(room.eventLockedUntil, Date.now() + duration);
 }
 
 function timerKey(roomId: string, playerId: PlayerId) {
@@ -295,6 +338,7 @@ function buildPublicState(room: Room): PublicState {
       roundNumber: room.roundNumber,
       stats: structuredClone(room.stats),
       reactions: room.reactions.slice(-20),
+      eventLockedUntil: room.eventLockedUntil,
       chat: room.chat.slice(-50),
       players: room.players.map((player) => ({
         id: player.id,
@@ -344,6 +388,7 @@ function buildPublicState(room: Room): PublicState {
     roundNumber: room.roundNumber,
     stats: structuredClone(room.stats),
     reactions: room.reactions.slice(-20),
+    eventLockedUntil: room.eventLockedUntil,
     chat: room.chat.slice(-50),
     players: room.players.map((player) => ({
       id: player.id,
@@ -410,6 +455,7 @@ function removeFromQueues(playerId: PlayerId) {
 
 function startRoom(room: Room) {
   room.status = "playing";
+  room.eventLockedUntil = 0;
   room.rematchVotes.clear();
   room.readyPlayers.clear();
   room.state = initGame(room);
@@ -457,6 +503,7 @@ function tryCreateRoom(size: 2 | 3 | 4) {
     roundNumber: 1,
     stats: Object.fromEntries(players.map((playerId) => [playerId, emptyStats()])),
     reactions: [],
+    eventLockedUntil: 0,
     chat: [],
     state: {
       deck: [],
@@ -532,6 +579,7 @@ function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
     roundNumber: 1,
     stats: { [host.id]: emptyStats() },
     reactions: [],
+    eventLockedUntil: 0,
     chat: [],
     state: {
       deck: [],
@@ -610,8 +658,14 @@ function applyPendingResolution(room: Room, pending: PendingMiniGame) {
   miniGameResultTimers.set(room.id, timer);
 }
 
-wss.on("connection", (ws: WebSocket) => {
+wss.on("connection", (ws: WebSocket, request) => {
+  const origin = request.headers.origin;
+  if (ALLOWED_ORIGINS.size > 0 && (!origin || !ALLOWED_ORIGINS.has(origin))) {
+    ws.close(1008, "Origin not allowed");
+    return;
+  }
   socketHeartbeats.set(ws, Date.now());
+  messageWindows.set(ws, { startedAt: Date.now(), count: 0 });
   ws.on("pong", () => socketHeartbeats.set(ws, Date.now()));
   const id = randomUUID();
   const client: ClientInfo = {
@@ -626,9 +680,28 @@ wss.on("connection", (ws: WebSocket) => {
   clients.set(ws, client);
 
   ws.on("message", (data: WebSocket.RawData) => {
+    const byteLength = Buffer.byteLength(data.toString());
+    if (byteLength > MAX_MESSAGE_BYTES) {
+      ws.close(1009, "Message too large");
+      return;
+    }
+    const now = Date.now();
+    const window = messageWindows.get(ws) ?? { startedAt: now, count: 0 };
+    if (now - window.startedAt > 10_000) {
+      window.startedAt = now;
+      window.count = 0;
+    }
+    window.count += 1;
+    messageWindows.set(ws, window);
+    if (window.count > 80) {
+      ws.close(1008, "Rate limit exceeded");
+      return;
+    }
     let message: ClientMessage;
     try {
-      message = JSON.parse(data.toString());
+      const parsed: unknown = JSON.parse(data.toString());
+      if (!isClientMessage(parsed)) throw new Error("Invalid shape");
+      message = parsed;
     } catch {
       send(ws, { type: "error", message: "Invalid message." });
       return;
@@ -932,6 +1005,10 @@ wss.on("connection", (ws: WebSocket) => {
           send(ws, { type: "error", message: "Wait for the minigame reveal to finish." });
           return;
         }
+        if (Date.now() < room.eventLockedUntil) {
+          send(ws, { type: "error", message: "Wait for the current event to finish." });
+          return;
+        }
         const playerId = client.id;
         const isTurn = currentPlayerId(room) === playerId;
 
@@ -946,6 +1023,7 @@ wss.on("connection", (ws: WebSocket) => {
               return;
             }
           }
+          lockRoomEvents(room, 900);
           if (room.state.pendingDraw2 > 0) {
             const count = room.state.pendingDraw2;
             room.state = drawCards(room.state, playerId, count);
@@ -983,6 +1061,7 @@ wss.on("connection", (ws: WebSocket) => {
           const top = room.state.discardPile[room.state.discardPile.length - 1].card;
           if (!isPlayableForTurn(card, top, room.state.pendingDraw2)) return;
           if (room.state.pendingDraw2 > 0 && card.value !== "Draw2") return;
+          lockRoomEvents(room, card.value === "RPS" || card.value === "HT" || card.value === "Wild" || card.value === "Wild4" ? 1400 : 1000);
 
           const nextHand = hand.filter((_, i) => i !== action.index);
           room.state.hands[playerId] = nextHand;
@@ -1021,7 +1100,9 @@ wss.on("connection", (ws: WebSocket) => {
 
           if (card.value === "Wild" || card.value === "Wild4") {
             if (nextHand.length === 0) {
+              const countsBefore = handCounts(room);
               room.state = finishPlay(room, room.state, playerId, card);
+              recordAutomaticDraws(room, countsBefore);
               recordRoundWin(room, playerId);
               room.state = updateUnoWindows(room, room.state);
               pushRoomState(room);
@@ -1049,14 +1130,17 @@ wss.on("connection", (ws: WebSocket) => {
         if (message.action.type === "choose_wild") {
           const pending = room.state.pendingWild;
           if (!pending || pending.playerId !== playerId) return;
+          lockRoomEvents(room, 900);
           const last = room.state.discardPile[room.state.discardPile.length - 1];
           const updatedDiscard = { ...last.card, color: message.action.color };
+          const countsBefore = handCounts(room);
           room.state = {
             ...room.state,
             discardPile: room.state.discardPile.slice(0, -1),
             pendingWild: null,
           };
           room.state = finishPlay(room, room.state, playerId, updatedDiscard, message.action.color);
+          recordAutomaticDraws(room, countsBefore);
           if ((room.state.hands[playerId] ?? []).length === 0) {
             recordRoundWin(room, playerId);
           }
@@ -1106,6 +1190,7 @@ wss.on("connection", (ws: WebSocket) => {
           const hand = room.state.hands[playerId] ?? [];
           if (hand.length !== 1) return;
           if (room.state.unoCalled[playerId]) return;
+          lockRoomEvents(room, 900);
           room.state = {
             ...room.state,
             unoCalled: { ...room.state.unoCalled, [playerId]: true },
@@ -1125,6 +1210,7 @@ wss.on("connection", (ws: WebSocket) => {
           const hand = room.state.hands[targetId] ?? [];
           if (hand.length !== 1) return;
           if (room.state.unoCalled[targetId]) return;
+          lockRoomEvents(room, 1200);
           room.state = drawCards(room.state, targetId, 2);
           room.stats[playerId].unoChallenges += 1;
           if (room.stats[targetId]) room.stats[targetId].cardsDrawn += 2;
@@ -1151,6 +1237,7 @@ wss.on("connection", (ws: WebSocket) => {
 
   ws.on("close", () => {
     socketHeartbeats.delete(ws);
+    messageWindows.delete(ws);
     clients.delete(ws);
     const replacement = [...clients.values()].find(
       (candidate) => candidate.id === client.id,
@@ -1208,6 +1295,10 @@ wss.on("connection", (ws: WebSocket) => {
               liveRoom.state,
               `${client.name} did not reconnect. Their turn was skipped.`,
             );
+            if (liveRoom.players.filter((entry) => entry.connected).length < 2) {
+              closeRoom(liveRoom, "Room closed because too few players remained connected.");
+              return;
+            }
           }
           pushRoomState(liveRoom);
         }, RECONNECT_GRACE_MS);
@@ -1231,5 +1322,15 @@ const maintenanceTimer = setInterval(() => {
   }
 }, 30_000);
 maintenanceTimer.unref();
+
+function shutdown(signal: string) {
+  console.log(`${signal} received; closing WebSocket server.`);
+  clearInterval(maintenanceTimer);
+  for (const ws of clients.keys()) ws.close(1012, "Server restarting");
+  wss.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5_000).unref();
+}
+process.once("SIGTERM", () => shutdown("SIGTERM"));
+process.once("SIGINT", () => shutdown("SIGINT"));
 
 console.log(`WebSocket server running on ws://localhost:${PORT}`);

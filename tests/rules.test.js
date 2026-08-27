@@ -71,3 +71,29 @@ test("best-of-three scoring crowns the first player to two", () => {
   assert.deepEqual(second, { scores: { a: 2, b: 0 }, matchWinnerId: "a" });
   assert.deepEqual(first.scores, { a: 1, b: 0 }, "input scores stay immutable");
 });
+
+test("RPS outcome is exhaustive and symmetric", () => {
+  const choices = ["rock", "paper", "scissors"];
+  for (const left of choices) {
+    for (const right of choices) {
+      const forward = resolveRpsWinner(left, right);
+      const backward = resolveRpsWinner(right, left);
+      if (left === right) assert.equal(forward, "tie");
+      else assert.equal(forward === "thrower", backward === "target");
+    }
+  }
+});
+
+test("custom match targets do not crown a player early", () => {
+  const first = scoreRound({ a: 2, b: 1 }, "a", 4);
+  assert.equal(first.matchWinnerId, null);
+  const final = scoreRound(first.scores, "a", 4);
+  assert.equal(final.matchWinnerId, "a");
+  assert.equal(final.scores.b, 1);
+});
+
+test("UNO gate stays closed until the final-card call is recorded", () => {
+  assert.equal(canPlayFinalCard(1, false), false);
+  assert.equal(canPlayFinalCard(1, true), true);
+  assert.equal(canPlayFinalCard(2, false), true, "multi-card turns cannot be falsely blocked");
+});

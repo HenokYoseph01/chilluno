@@ -51,6 +51,7 @@ export type PublicState = {
   roundNumber: number;
   stats: Record<PlayerId, PlayerStats>;
   reactions: { id: number; playerId: PlayerId; emoji: string; timestamp: number }[];
+  eventLockedUntil: number;
   chat: {
     id: number;
     playerId: PlayerId;

@@ -1,9 +1,12 @@
 /* eslint-disable react-hooks/immutability, react-hooks/purity, react-hooks/exhaustive-deps */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, useAnimation } from "framer-motion";
+import { AnimatePresence, motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
+import CoinTosser from "../components/CoinTosser";
+import RpsTosser from "../components/RpsTosser";
 import { generateDeck, shuffleArray } from "../game/deckEngine";
+import { achievementLabels, recordSoloMatch, type MatchReward } from "../game/profile";
 import type { Color, deckOutline } from "../types/cards";
 import { actionTurnSteps, canPlayFinalCard, isPlayable, isPlayableForTurn, nextDirection, resolveRpsWinner as resolveSharedRpsWinner } from "../../shared/rules.js";
 
@@ -281,15 +284,18 @@ function chooseAiCardIndex(
 
   let bestIndex = playableIndices[0];
   let bestScore = -Infinity;
+  const hasColoredAlternative = playableIndices.some((index) => aiHand[index].color !== "wild");
   for (const index of playableIndices) {
     const card = aiHand[index];
     let score = 0;
-    if (card.value === "Wild4") score += 90;
-    if (card.value === "Wild") score += 60;
+    if (card.value === "Wild4") score += playerHand.length <= 2 || !hasColoredAlternative ? 90 : 12;
+    if (card.value === "Wild") score += !hasColoredAlternative ? 60 : 8;
     if (card.value === "Draw2") score += playerHand.length <= 2 ? 80 : 45;
     if (card.value === "Skip") score += playerHand.length <= 2 ? 60 : 25;
     if (card.value === "Reverse") score += playerHand.length <= 2 ? 50 : 20;
+    if (card.value === "RPS" || card.value === "HT") score += playerHand.length <= 2 ? 68 : 18;
     if (typeof card.value === "number") score += 10;
+    if (aiHand.length === 1) score += 1_000;
     if (card.color !== "wild") {
       const aiColorCount = aiHand.filter((c) => c.color === card.color).length;
       const playerColorCount = playerHand.filter(
@@ -400,6 +406,9 @@ export default function Game({
   const [showExitModal, setShowExitModal] = useState(false);
   const [rpsSelection, setRpsSelection] = useState<RpsChoice | null>(null);
   const [coinSelection, setCoinSelection] = useState<CoinChoice | null>(null);
+  const [matchReward, setMatchReward] = useState<MatchReward | null>(null);
+  const [eventLocked, setEventLocked] = useState(false);
+  const recordedWinnerRef = useRef<Player | null>(null);
   const [coinFlip, setCoinFlip] = useState<{
     active: boolean;
     result: CoinChoice | null;
@@ -416,6 +425,20 @@ export default function Game({
   const coinFlipTimer = useRef<number | null>(null);
   const coinFlipClearTimer = useRef<number | null>(null);
   const aiCoinScheduledRef = useRef(false);
+  const eventLockTimer = useRef<number | null>(null);
+  const eventLockUntilRef = useRef(0);
+
+  function lockEvents(duration = 1100) {
+    const until = Math.max(eventLockUntilRef.current, Date.now() + duration);
+    eventLockUntilRef.current = until;
+    setEventLocked(true);
+    if (eventLockTimer.current !== null) window.clearTimeout(eventLockTimer.current);
+    eventLockTimer.current = window.setTimeout(() => {
+      setEventLocked(false);
+      eventLockUntilRef.current = 0;
+      eventLockTimer.current = null;
+    }, Math.max(0, until - Date.now()));
+  }
 
   const topCard = useMemo(
     () => game.discardPile[game.discardPile.length - 1].card,
@@ -436,10 +459,16 @@ export default function Game({
     actionNonce,
   } = game;
 
+  useEffect(() => {
+    if (!winner || recordedWinnerRef.current === winner) return;
+    recordedWinnerRef.current = winner;
+    setMatchReward(recordSoloMatch(winner === "player").reward);
+  }, [winner]);
+
   const playerHasPlayable = playerHand.some((card) =>
     isPlayableForTurn(card, topCard, pendingDraw2),
   );
-  const canDrawFromPile = currentPlayer === "player" && !winner && !pendingWild && !pendingMiniGame && !playerHasPlayable;
+  const canDrawFromPile = currentPlayer === "player" && !winner && !pendingWild && !pendingMiniGame && !playerHasPlayable && !eventLocked;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -454,7 +483,8 @@ export default function Game({
           !winner &&
           !pendingWild &&
           !pendingMiniGame &&
-          !playerHasPlayable
+          !playerHasPlayable &&
+          !eventLocked
         ) {
           drawCard("player");
         }
@@ -471,6 +501,10 @@ export default function Game({
           notify("UNO called on AI. It draws 2.");
         }
       }
+      const cardNumber = Number.parseInt(key, 10);
+      if (cardNumber >= 1 && cardNumber <= 9 && cardNumber <= playerHand.length) {
+        playCard("player", cardNumber - 1);
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -480,6 +514,7 @@ export default function Game({
     pendingMiniGame,
     pendingWild,
     playerHasPlayable,
+    playerHand,
     unoCalled.ai,
     unoCalled.player,
     unoWindow.ai,
@@ -538,9 +573,17 @@ export default function Game({
       window.clearTimeout(coinFlipClearTimer.current);
       coinFlipClearTimer.current = null;
     }
+    if (eventLockTimer.current !== null) {
+      window.clearTimeout(eventLockTimer.current);
+      eventLockTimer.current = null;
+    }
+    eventLockUntilRef.current = 0;
+    setEventLocked(false);
   }
 
   function drawCard(player: Player) {
+    if (eventLocked) return;
+    lockEvents(900);
     setGame((prev) => {
       if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       if (prev.pendingDraw2 > 0 && prev.currentPlayer === player) {
@@ -558,6 +601,12 @@ export default function Game({
   }
 
   function playCard(player: Player, index: number) {
+    if (eventLocked) return;
+    const snapshotHand = player === "player" ? game.playerHand : game.aiHand;
+    const snapshotCard = snapshotHand[index];
+    const snapshotTop = game.discardPile.at(-1)?.card;
+    if (!snapshotCard || !snapshotTop || game.winner || game.currentPlayer !== player || game.pendingWild || game.pendingMiniGame || !canPlayFinalCard(snapshotHand.length, game.unoCalled[player]) || (game.pendingDraw2 > 0 ? snapshotCard.value !== "Draw2" : !isPlayable(snapshotCard, snapshotTop))) return;
+    lockEvents(snapshotCard.value === "RPS" || snapshotCard.value === "HT" || snapshotCard.value === "Wild" || snapshotCard.value === "Wild4" ? 1400 : 1000);
     setGame((prev) => {
       if (prev.winner || prev.currentPlayer !== player || prev.pendingWild) {
         return prev;
@@ -622,6 +671,8 @@ export default function Game({
   }
 
   function callUnoSelf(player: Player) {
+    if (eventLocked) return;
+    lockEvents(900);
     setGame((prev) => {
       if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       const hand = player === "player" ? prev.playerHand : prev.aiHand;
@@ -635,6 +686,8 @@ export default function Game({
   }
 
   function callUnoOn(target: Player) {
+    if (eventLocked) return;
+    lockEvents(1200);
     setGame((prev) => {
       if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       const hand = target === "player" ? prev.playerHand : prev.aiHand;
@@ -653,6 +706,7 @@ export default function Game({
   }
 
   function showUnoBanner(message: string) {
+    lockEvents(1400);
     setUnoBanner(message);
     if (unoBannerTimer.current !== null) {
       window.clearTimeout(unoBannerTimer.current);
@@ -669,6 +723,8 @@ export default function Game({
   }
 
   function chooseWildColor(color: Color) {
+    if (eventLocked) return;
+    lockEvents(900);
     setGame((prev) => {
       if (!prev.pendingWild || prev.pendingWild.player !== "player") {
         return prev;
@@ -689,6 +745,7 @@ export default function Game({
   }
 
   function resolveRps(playerChoice: RpsChoice) {
+    lockEvents(1900);
     const aiChoice: RpsChoice =
       (["rock", "paper", "scissors"] as const)[
         Math.floor(Math.random() * 3)
@@ -759,6 +816,7 @@ export default function Game({
   }
 
   function startCoinFlip(choice: CoinChoice) {
+    lockEvents(2200);
     const result: CoinChoice = Math.random() < 0.5 ? "heads" : "tails";
     if (coinFlipTimer.current !== null) {
       window.clearTimeout(coinFlipTimer.current);
@@ -832,10 +890,11 @@ export default function Game({
   }
 
   useEffect(() => {
-    if (winner || currentPlayer !== "ai" || pendingWild || pendingMiniGame) {
+    if (winner || currentPlayer !== "ai" || pendingWild || pendingMiniGame || eventLocked) {
       return;
     }
     const timer = setTimeout(() => {
+      lockEvents(1200);
       setGame((prev) => {
         if (
           prev.winner ||
@@ -978,7 +1037,7 @@ export default function Game({
     }, 600);
 
     return () => clearTimeout(timer);
-  }, [actionNonce, currentPlayer, pendingMiniGame, pendingWild, winner, difficulty]);
+  }, [actionNonce, currentPlayer, pendingMiniGame, pendingWild, winner, difficulty, eventLocked]);
 
   useEffect(() => {
     setGame((prev) => {
@@ -1075,7 +1134,7 @@ export default function Game({
   }, [pendingMiniGame, coinFlip.result]);
 
   useEffect(() => {
-    if (winner || pendingWild || pendingMiniGame) return;
+    if (winner || pendingWild || pendingMiniGame || eventLocked) return;
     if (aiAutoUnoTimer.current !== null) {
       window.clearTimeout(aiAutoUnoTimer.current);
       aiAutoUnoTimer.current = null;
@@ -1115,10 +1174,11 @@ export default function Game({
     unoWindow.aiToken,
     winner,
     difficulty,
+    eventLocked,
   ]);
 
   useEffect(() => {
-    if (winner || pendingWild || pendingMiniGame) return;
+    if (winner || pendingWild || pendingMiniGame || eventLocked) return;
     if (aiCallPlayerTimer.current !== null) {
       window.clearTimeout(aiCallPlayerTimer.current);
       aiCallPlayerTimer.current = null;
@@ -1160,6 +1220,7 @@ export default function Game({
     unoWindow.playerToken,
     winner,
     difficulty,
+    eventLocked,
   ]);
 
   useEffect(() => {
@@ -1342,12 +1403,14 @@ export default function Game({
                 key={`${val.color}-${val.value}-${index}`}
                 onClick={() => playCard("player", index)}
                 disabled={
+                  eventLocked ||
                   currentPlayer !== "player" ||
                   !!winner ||
                   pendingWild !== null ||
                   pendingMiniGame !== null
                 }
                 className={`hand-card-button ${isPlayableForTurn(val, topCard, pendingDraw2) && !(playerHand.length === 1 && !unoCalled.player) ? "hand-card-button--playable" : "hand-card-button--unplayable"}`}
+                aria-label={`Card ${index + 1}: ${val.color} ${val.value}${isPlayableForTurn(val, topCard, pendingDraw2) ? ", playable" : ", not playable"}`}
               >
                 <Card color={val.color} value={val.value} />
               </button>
@@ -1358,32 +1421,33 @@ export default function Game({
         </div>
       </div>
 
+      <AnimatePresence>{winner && matchReward && <motion.div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><motion.section role="dialog" aria-modal="true" aria-labelledby="solo-result-title" className="glass-panel w-full max-w-sm rounded-3xl p-6 text-center" initial={{ y:30, scale:.92 }} animate={{ y:0, scale:1 }}><div className="text-5xl">{winner === "player" ? "🏆" : "🎴"}</div><h2 id="solo-result-title" className="display-font mt-3 text-3xl font-black">{winner === "player" ? "You own the table!" : "The bot got this one"}</h2><p className="mt-2 text-sm text-slate-400">+{matchReward.xp} XP · Level {matchReward.levelAfter}</p>{matchReward.levelAfter > matchReward.levelBefore && <motion.div className="mt-3 rounded-full bg-[#b8f36b]/15 px-4 py-2 font-bold text-[#b8f36b]" initial={{ scale:0 }} animate={{ scale:[0,1.15,1] }}>Level up!</motion.div>}{matchReward.unlocked.map((id) => <motion.div key={id} className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3" initial={{ x:-20, opacity:0 }} animate={{ x:0, opacity:1 }}><span className="text-2xl">{achievementLabels[id].icon}</span><div className="text-xs font-bold text-amber-200">Achievement unlocked</div><div>{achievementLabels[id].title}</div></motion.div>)}<div className="mt-5 flex gap-2"><button className="secondary-button flex-1 px-4 py-3" onClick={onBack}>Menu</button><button className="primary-button flex-1 px-4 py-3" onClick={() => window.location.reload()}>Play again</button></div></motion.section></motion.div>}</AnimatePresence>
+      <AnimatePresence>{eventLocked && <motion.div className="pointer-events-auto fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
+
       {pendingWild && pendingWild.player === "player" && (
-        <div className="mt-6 rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-sm text-slate-400">Choose a color</div>
-          <div className="mt-3 flex gap-2">
+        <motion.div className="wild-picker fixed inset-0 z-50 flex items-center justify-center px-4" initial={{ opacity:0 }} animate={{ opacity:1 }}>
+          <motion.div role="dialog" aria-modal="true" aria-labelledby="wild-color-title" className="glass-panel relative w-full max-w-md overflow-hidden rounded-3xl p-7 text-center" initial={{ scale:.65, rotate:-4 }} animate={{ scale:[.65,1.06,1], rotate:0 }}>
+          <motion.div className="wild-picker__flash" animate={{ opacity:[0,.8,0], scale:[.4,1.5,2] }} transition={{ duration:.75 }} />
+          <h2 id="wild-color-title" className="display-font text-3xl font-black">Pick the vibe</h2><p className="mt-2 text-sm text-slate-400">Choose the color everyone has to deal with.</p>
+          <div className="mt-6 grid grid-cols-2 gap-3">
             {COLORS.map((color) => (
-              <button
+              <motion.button
                 key={color}
                 onClick={() => chooseWildColor(color)}
-                className={`h-10 w-10 rounded-full ring-2 ring-slate-700 ${
-                  color === "red"
-                    ? "bg-red-500"
-                    : color === "yellow"
-                      ? "bg-yellow-400"
-                      : color === "green"
-                        ? "bg-green-500"
-                        : "bg-blue-500"
-                }`}
-              />
+                whileHover={{ scale:1.06, y:-3 }} whileTap={{ scale:.9 }}
+                className={`wild-picker__color wild-picker__color--${color}`}
+                aria-label={`Choose ${color}`}
+              ><span />{color}</motion.button>
             ))}
           </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
 
       {pendingMiniGame && pendingMiniGame.type === "rps" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+            <RpsTosser key={rpsSelection ?? "idle"} choice={rpsSelection} animate={!!rpsSelection} compact />
             <div className="text-base font-semibold text-slate-100">
               Rock, Paper, Scissors
             </div>
@@ -1470,7 +1534,7 @@ export default function Game({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <motion.div
             key={coinImpactKey}
-            className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200"
+            className="relative min-h-[350px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-5 pl-56 text-sm text-slate-200 max-sm:pt-52 max-sm:pl-5"
             animate={
               coinFlip.result && !coinFlip.active
                 ? {
@@ -1481,6 +1545,7 @@ export default function Game({
             }
             transition={{ duration: 0.35, ease: "easeInOut" }}
           >
+            <CoinTosser active={coinFlip.active} landed={!!coinFlip.result && !coinFlip.active} className="absolute bottom-0 left-0" />
             <div className="text-base font-semibold text-slate-100">
               Heads or Tails
             </div>
@@ -1631,7 +1696,7 @@ export default function Game({
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
             <motion.div
               key={coinImpactKey}
-              className="rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 text-center text-sm text-slate-200"
+              className="relative min-h-[320px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 pl-52 text-center text-sm text-slate-200 max-sm:min-h-[430px] max-sm:pt-52 max-sm:pl-6"
               animate={
                 coinFlip.result && !coinFlip.active
                   ? {
@@ -1642,6 +1707,7 @@ export default function Game({
               }
               transition={{ duration: 0.35, ease: "easeInOut" }}
             >
+              <CoinTosser active={coinFlip.active} landed={!!coinFlip.result && !coinFlip.active} className="absolute bottom-0 left-0" />
               <div className="text-base font-semibold text-slate-100">
                 Heads or Tails
               </div>
@@ -1694,7 +1760,7 @@ export default function Game({
         )}
 
       {unoBanner && (
-        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200">
+        <div className="mt-4 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-200" role="status" aria-live="polite">
           {unoBanner}
         </div>
       )}

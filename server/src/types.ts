@@ -119,6 +119,7 @@ export interface Room {
   roundNumber: number;
   stats: Record<PlayerId, PlayerStats>;
   reactions: Reaction[];
+  eventLockedUntil: number;
 }
 
 export interface PlayerStats {

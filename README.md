@@ -1,5 +1,17 @@
 # React + TypeScript + Vite
 
+## Production configuration
+
+Copy `.env.example` into your hosting provider's environment settings. Set
+`VITE_WS_URL` to the public secure WebSocket endpoint and `ALLOWED_ORIGINS` to
+the exact HTTPS origins allowed to connect. The server enforces a 16 KiB message
+limit, per-connection rate limiting, heartbeat cleanup, expiring sessions, and
+graceful shutdown.
+
+For local development, run `npm run server:dev` and `npm run dev` in separate
+terminals. Before deployment, run `npm test`, `npm run lint`, `npm run build`,
+and `npm run server:build`.
+
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
 
 Currently, two official plugins are available:

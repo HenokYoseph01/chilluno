@@ -104,9 +104,9 @@ export default function Rules({
           <div className="font-semibold">AI Difficulty</div>
           <div className="mt-3 flex flex-wrap gap-2">
             {[
-              { label: "Beginner (Noob lol)", value: "beginner" },
-              { label: "Intermediate", value: "intermediate" },
-              { label: "Insane", value: "insane" },
+              { label: "Beginner · Sleepy", value: "beginner", hint: "Random plays and slow UNO reactions" },
+              { label: "Intermediate · Chill", value: "intermediate", hint: "Saves attacks for dangerous moments" },
+              { label: "Insane · Menace", value: "insane", hint: "Tracks colors and conserves wild cards" },
             ].map((option) => (
               <button
                 key={option.value}
@@ -121,7 +121,7 @@ export default function Rules({
                 }`}
                 onClick={() => setDifficulty(option.value as AiDifficulty)}
               >
-                {option.label}
+                <span className="block">{option.label}</span><span className="mt-1 block text-[10px] font-normal opacity-70">{option.hint}</span>
               </button>
             ))}
           </div>

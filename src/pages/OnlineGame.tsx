@@ -3,6 +3,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useAnimation } from "framer-motion";
 import Card from "../components/Card";
 import CardBack from "../components/CardBack";
+import CoinTosser from "../components/CoinTosser";
+import RpsTosser from "../components/RpsTosser";
+import { achievementLabels, recordSoloMatch, type MatchReward } from "../game/profile";
 import type { deckOutline } from "../types/cards";
 import type { ActivePublicState, ClientMessage, PublicPlayer } from "../types/online";
 import { isPlayableForTurn } from "../../shared/rules.js";
@@ -115,6 +118,8 @@ export default function OnlineGame({
   const [invalidCard, setInvalidCard] = useState<{ index: number; message: string } | null>(null);
   const [rpsSelection, setRpsSelection] = useState<"rock" | "paper" | "scissors" | null>(null);
   const [coinSelection, setCoinSelection] = useState<"heads" | "tails" | null>(null);
+  const [matchReward, setMatchReward] = useState<MatchReward | null>(null);
+  const recordedMatchRef = useRef<string | null>(null);
   const [rpsSubmitted, setRpsSubmitted] = useState(false);
   const [coinSubmitted, setCoinSubmitted] = useState(false);
   const [coinFlip, setCoinFlip] = useState<{
@@ -196,20 +201,21 @@ export default function OnlineGame({
   }, [state.history, state.players, state.currentPlayerId, state.miniGameResult, enqueueEffect]);
 
   useEffect(() => {
-    if (!state.players.some((player) => player.reconnectDeadline)) return;
-    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    if (!state.players.some((player) => player.reconnectDeadline) && state.eventLockedUntil <= Date.now()) return;
+    const timer = window.setInterval(() => setClock(Date.now()), state.eventLockedUntil > Date.now() ? 100 : 1000);
     return () => window.clearInterval(timer);
-  }, [state.players]);
+  }, [state.players, state.eventLockedUntil]);
 
   const topCard = useMemo(() => state.discardTop, [state.discardTop]);
   const you = state.players.find((player) => player.id === youId);
   const isYourTurn = state.currentPlayerId === youId;
   const pendingWild = state.pendingWild;
   const pendingMiniGame = state.pendingMiniGame;
+  const eventLocked = clock < state.eventLockedUntil;
   const playerHasPlayable = hand.some((card) =>
     isPlayableForTurn(card, topCard, state.pendingDraw2),
   );
-  const canDraw = isYourTurn && !state.winnerId && !pendingWild && !pendingMiniGame && !state.miniGameResult && !playerHasPlayable;
+  const canDraw = isYourTurn && !state.winnerId && !pendingWild && !pendingMiniGame && !state.miniGameResult && !playerHasPlayable && !eventLocked;
   const opponents = state.players.filter((player) => player.id !== youId);
   const latestReaction = (playerId: string) => [...state.reactions].reverse().find((reaction) => reaction.playerId === playerId);
   const yourReaction = latestReaction(youId);
@@ -225,6 +231,17 @@ export default function OnlineGame({
       leaders((stats) => stats.rpsWins + stats.coinWins, "Minigame boss", "🎲"),
     ].filter((award): award is NonNullable<typeof award> => award !== null);
   }, [state.matchWinnerId, state.players, state.stats]);
+  useEffect(() => {
+    if (!state.matchWinnerId) {
+      recordedMatchRef.current = null;
+      setMatchReward(null);
+      return;
+    }
+    const matchKey = `${state.roomId}:${state.roundNumber}:${state.matchWinnerId}`;
+    if (recordedMatchRef.current === matchKey) return;
+    recordedMatchRef.current = matchKey;
+    setMatchReward(recordSoloMatch(state.matchWinnerId === youId).reward);
+  }, [state.matchWinnerId, state.roomId, state.roundNumber, youId]);
   function visualPosition(playerId: string) {
     if (playerId === youId) return "seat-bottom";
     const index = opponents.findIndex((player) => player.id === playerId);
@@ -321,7 +338,8 @@ export default function OnlineGame({
           !state.winnerId &&
           !pendingWild &&
           !pendingMiniGame &&
-          !playerHasPlayable
+          !playerHasPlayable &&
+          !eventLocked
         ) {
           send({ type: "action", action: { type: "draw" } });
         }
@@ -340,17 +358,26 @@ export default function OnlineGame({
           send({ type: "action", action: { type: "call_uno_on", targetId: target.id } });
         }
       }
+      const cardNumber = Number.parseInt(key, 10);
+      const card = hand[cardNumber - 1];
+      if (cardNumber >= 1 && cardNumber <= 9 && card && isYourTurn && isPlayableForTurn(card, topCard, state.pendingDraw2) && !(hand.length === 1 && !you?.unoCalled)) {
+        send({ type: "action", action: { type: "play", index: cardNumber - 1 } });
+      }
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [
     isYourTurn,
+    hand,
+    eventLocked,
     pendingMiniGame,
     pendingWild,
     playerHasPlayable,
     send,
     state.players,
     state.winnerId,
+    state.pendingDraw2,
+    topCard,
     you?.unoCalled,
     you?.unoWindow,
     youId,
@@ -581,6 +608,7 @@ export default function OnlineGame({
                     send({ type: "action", action: { type: "play", index } });
                   }}
                   disabled={
+                    eventLocked ||
                     !isYourTurn ||
                     !!state.winnerId ||
                     pendingWild !== null ||
@@ -588,6 +616,7 @@ export default function OnlineGame({
                     false
                   }
                   className={`hand-card-button ${isPlayableForTurn(card, topCard, state.pendingDraw2) && !(hand.length === 1 && !you?.unoCalled) ? "hand-card-button--playable" : "hand-card-button--unplayable"} ${invalidCard?.index === index ? "invalid-card" : ""}`}
+                  aria-label={`Card ${index + 1}: ${card.color} ${card.value}${isPlayableForTurn(card, topCard, state.pendingDraw2) ? ", playable" : ", not playable"}`}
                 >
                   <Card color={card.color} value={card.value} />
                 </button>
@@ -602,19 +631,20 @@ export default function OnlineGame({
         </div>
       </div>
 
+      <AnimatePresence>{eventLocked && <motion.div className="pointer-events-auto fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
+
       {pendingWild && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
-          <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
-            <div className="text-base font-semibold text-slate-100">
-              Choose Wild Color
-            </div>
+        <motion.div className="wild-picker fixed inset-0 z-50 flex items-center justify-center px-4" initial={{ opacity:0 }} animate={{ opacity:1 }}>
+          <motion.div role="dialog" aria-modal="true" aria-labelledby="online-wild-title" className="glass-panel relative w-full max-w-md overflow-hidden rounded-3xl p-7 text-center" initial={{ scale:.65, rotate:-4 }} animate={{ scale:[.65,1.06,1], rotate:0 }}>
+            <motion.div className="wild-picker__flash" animate={{ opacity:[0,.8,0], scale:[.4,1.5,2] }} transition={{ duration:.75 }} />
+            <h2 id="online-wild-title" className="display-font text-3xl font-black">Pick the vibe</h2>
             <div className="mt-2 text-slate-400">
               {pendingWild.playerId === youId
                 ? "Select a color to continue."
                 : `Waiting for ${playerLabel(state, pendingWild.playerId)}.`}
             </div>
             {pendingWild.playerId === youId && (
-              <div className="mt-4 flex gap-2">
+              <div className="mt-6 grid grid-cols-2 gap-3">
                 {COLORS.map((color) => (
                   <button
                     key={color}
@@ -624,26 +654,20 @@ export default function OnlineGame({
                         action: { type: "choose_wild", color },
                       })
                     }
-                    className={`h-10 w-10 rounded-full ring-2 ring-slate-700 ${
-                      color === "red"
-                        ? "bg-red-500"
-                        : color === "yellow"
-                          ? "bg-yellow-400"
-                          : color === "green"
-                            ? "bg-green-500"
-                            : "bg-blue-500"
-                    }`}
-                  />
+                    className={`wild-picker__color wild-picker__color--${color}`}
+                    aria-label={`Choose ${color}`}
+                  ><span />{color}</button>
                 ))}
               </div>
             )}
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
 
       {pendingMiniGame && pendingMiniGame.type === "rps" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <div className="w-full max-w-sm rounded-xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200">
+            <RpsTosser key={rpsSelection ?? "idle"} choice={rpsSelection} animate={!!rpsSelection} compact />
             <div className="text-base font-semibold text-slate-100">
               Rock, Paper, Scissors
             </div>
@@ -749,7 +773,7 @@ export default function OnlineGame({
                 { id: state.miniGameResult.targetId, choice: state.miniGameResult.targetChoice },
               ].map((entry, index) => (
                 <motion.div key={entry.id} className={state.miniGameResult?.winnerId === entry.id ? "rps-choice rps-choice--winner" : "rps-choice"} initial={{ opacity:0, x:index === 0 ? -180 : 180, rotate:index === 0 ? -18 : 18 }} animate={{ opacity:1, x:0, rotate:0 }} transition={{ delay:.8, type:"spring", stiffness:260, damping:18 }}>
-                  <div className="rps-choice__sprite">{entry.choice === "rock" ? "✊" : entry.choice === "paper" ? "✋" : "✌️"}</div>
+                  <RpsTosser choice={entry.choice} animate compact />
                   <strong>{playerLabel(state, entry.id)}</strong><small>{entry.choice}</small>
                 </motion.div>
               )).flatMap((item, index) => index === 0 ? [item, <motion.div key="versus" className="display-font text-xl font-black text-rose-300" initial={{ scale:0 }} animate={{ scale:1 }} transition={{ delay:1.05 }}>VS</motion.div>] : [item])}
@@ -766,7 +790,7 @@ export default function OnlineGame({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <motion.div
             key={coinImpactKey}
-            className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200 shadow-2xl"
+            className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200 shadow-2xl max-sm:pt-[250px]"
             animate={
               coinFlip.result && !coinFlip.active
                 ? {
@@ -777,7 +801,7 @@ export default function OnlineGame({
             }
             transition={{ duration: 0.35, ease: "easeInOut" }}
           >
-            <motion.img src="/chill-guy-coin-toss-v2.png" alt="Chill Guy preparing to toss a coin" className="pointer-events-none absolute -bottom-24 -left-10 hidden w-[390px] select-none md:block" initial={{ opacity:0, x:-30 }} animate={{ opacity:.9, x:0, y:[0,-4,0] }} transition={{ opacity:{duration:.35}, x:{duration:.45}, y:{duration:3,repeat:Infinity} }} />
+            <CoinTosser active={coinFlip.active} landed={!!coinFlip.result && !coinFlip.active} className="absolute bottom-0 left-0" />
             <div className="relative z-10 md:ml-[48%]">
             <div className="text-base font-semibold text-slate-100">
               Heads or Tails
@@ -922,7 +946,7 @@ export default function OnlineGame({
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
             <motion.div
               key={coinImpactKey}
-              className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/95 px-6 py-6 text-center text-sm text-slate-200 shadow-2xl"
+              className="relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/95 px-6 py-6 text-center text-sm text-slate-200 shadow-2xl max-sm:pt-[250px]"
               animate={
                 coinFlip.result && !coinFlip.active
                   ? {
@@ -933,7 +957,7 @@ export default function OnlineGame({
               }
               transition={{ duration: 0.35, ease: "easeInOut" }}
             >
-              <motion.img src="/chill-guy-coin-toss-v2.png" alt="Chill Guy tossing the coin" className="pointer-events-none absolute -bottom-24 -left-12 hidden w-[420px] select-none md:block" initial={{ opacity:0, x:-50, rotate:-3 }} animate={{ opacity:1, x:0, rotate:[-3,1,0], y: coinFlip.active ? [30,-8,0] : 0 }} transition={{ duration:coinFlip.active ? 1.05 : .45, ease:"easeOut" }} />
+              <CoinTosser active={coinFlip.active} landed={!!coinFlip.result && !coinFlip.active} className="absolute bottom-0 left-0" />
               <div className="relative z-10 md:ml-[48%]">
               <div className="text-base font-semibold text-slate-100">
                 Heads or Tails
@@ -1058,6 +1082,8 @@ export default function OnlineGame({
                 <div className="mt-3 text-xs uppercase tracking-[0.3em] text-amber-300">Match complete</div>
                 <div className="display-font mt-2 text-3xl font-black text-amber-200">{state.matchWinnerId === youId ? "You own the table!" : `${playerLabel(state, state.matchWinnerId)} wins the match!`}</div>
                 <div className="mt-2 text-slate-300">First to two. No excuses left.</div>
+                {matchReward && <div className="mt-3 rounded-xl border border-[#b8f36b]/15 bg-[#b8f36b]/5 px-4 py-3 text-sm text-[#b8f36b]">+{matchReward.xp} XP · Level {matchReward.levelAfter}{matchReward.levelAfter > matchReward.levelBefore ? " · LEVEL UP!" : ""}</div>}
+                {matchReward?.unlocked.map((id) => <motion.div key={id} className="mt-2 rounded-xl border border-amber-300/20 bg-amber-300/10 p-2 text-amber-100" initial={{ scale:0 }} animate={{ scale:1 }}>{achievementLabels[id].icon} Achievement: {achievementLabels[id].title}</motion.div>)}
               </>
             ) : state.winnerId === youId ? (
               <>
