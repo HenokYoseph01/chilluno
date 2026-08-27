@@ -34,3 +34,8 @@ export function actionTurnSteps(value, playerCount) {
 export function nextDirection(value, direction) {
   return value === "Reverse" ? direction * -1 : direction;
 }
+
+export function scoreRound(scores, winnerId, target = 2) {
+  const nextScores = { ...scores, [winnerId]: (scores[winnerId] ?? 0) + 1 };
+  return { scores: nextScores, matchWinnerId: nextScores[winnerId] >= target ? winnerId : null };
+}

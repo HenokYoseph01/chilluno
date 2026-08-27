@@ -3,6 +3,7 @@ import type { deckOutline } from "./cards";
 export type PlayerId = string;
 
 export type LobbyQueue = { size: 2 | 3 | 4; waiting: number };
+export type PlayerStats = { cardsPlayed: number; cardsDrawn: number; unoCalls: number; unoChallenges: number; rpsWins: number; coinWins: number; roundsWon: number; matchesWon: number };
 
 export type PublicPlayer = {
   id: PlayerId;
@@ -45,6 +46,11 @@ export type PublicState = {
   rematchVotes: PlayerId[];
   hostId: PlayerId | null;
   readyPlayerIds: PlayerId[];
+  scores: Record<PlayerId, number>;
+  matchWinnerId: PlayerId | null;
+  roundNumber: number;
+  stats: Record<PlayerId, PlayerStats>;
+  reactions: { id: number; playerId: PlayerId; emoji: string; timestamp: number }[];
   chat: {
     id: number;
     playerId: PlayerId;
@@ -105,6 +111,7 @@ export type ClientMessage =
   | { type: "play_again" }
   | { type: "set_ready"; ready: boolean }
   | { type: "start_private" }
+  | { type: "reaction"; emoji: string }
   | { type: "chat"; text: string }
   | {
       type: "action";

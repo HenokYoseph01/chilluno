@@ -8,6 +8,7 @@ import {
   isWildCard,
   nextDirection,
   resolveRpsWinner,
+  scoreRound,
 } from "../shared/rules.js";
 
 const card = (color, value) => ({ color, value });
@@ -61,4 +62,12 @@ test("Reverse flips direction and other cards preserve it", () => {
   assert.equal(nextDirection("Reverse", 1), -1);
   assert.equal(nextDirection("Reverse", -1), 1);
   assert.equal(nextDirection("Skip", -1), -1);
+});
+
+test("best-of-three scoring crowns the first player to two", () => {
+  const first = scoreRound({ a: 0, b: 0 }, "a");
+  assert.deepEqual(first, { scores: { a: 1, b: 0 }, matchWinnerId: null });
+  const second = scoreRound(first.scores, "a");
+  assert.deepEqual(second, { scores: { a: 2, b: 0 }, matchWinnerId: "a" });
+  assert.deepEqual(first.scores, { a: 1, b: 0 }, "input scores stay immutable");
 });

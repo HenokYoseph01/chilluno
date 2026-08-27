@@ -114,7 +114,25 @@ export interface Room {
   chat: ChatMessage[];
   hostId: PlayerId | null;
   readyPlayers: Set<PlayerId>;
+  scores: Record<PlayerId, number>;
+  matchWinnerId: PlayerId | null;
+  roundNumber: number;
+  stats: Record<PlayerId, PlayerStats>;
+  reactions: Reaction[];
 }
+
+export interface PlayerStats {
+  cardsPlayed: number;
+  cardsDrawn: number;
+  unoCalls: number;
+  unoChallenges: number;
+  rpsWins: number;
+  coinWins: number;
+  roundsWon: number;
+  matchesWon: number;
+}
+
+export interface Reaction { id: number; playerId: PlayerId; emoji: string; timestamp: number }
 
 export interface ChatMessage {
   id: number;

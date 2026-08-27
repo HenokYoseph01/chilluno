@@ -7,3 +7,4 @@ export function canPlayFinalCard(handCount: number, unoCalled: boolean): boolean
 export function resolveRpsWinner(throwerChoice: RpsChoice, targetChoice: RpsChoice): "thrower" | "target" | "tie";
 export function actionTurnSteps(value: SharedCard["value"], playerCount: number): 1 | 2;
 export function nextDirection(value: SharedCard["value"], direction: 1 | -1): number;
+export function scoreRound(scores: Record<string, number>, winnerId: string, target?: number): { scores: Record<string, number>; matchWinnerId: string | null };

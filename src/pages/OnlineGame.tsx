@@ -27,11 +27,12 @@ function seatPosition(index: number, total: number) {
   return index === 0 ? "seat-left" : index === 1 ? "seat-top" : "seat-right";
 }
 
-function PlayerSeat({ player, active, position, clock, onCallUno }: {
+function PlayerSeat({ player, active, position, clock, reaction, onCallUno }: {
   player: PublicPlayer;
   active: boolean;
   position: string;
   clock: number;
+  reaction?: { id: number; emoji: string };
   onCallUno: () => void;
 }) {
   const seconds = player.reconnectDeadline
@@ -39,6 +40,7 @@ function PlayerSeat({ player, active, position, clock, onCallUno }: {
     : null;
   return (
     <motion.div className={`player-seat ${position} ${active ? "player-seat--active" : ""} ${player.disconnected ? "player-seat--offline" : ""}`} initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+      <AnimatePresence>{reaction && <motion.div key={reaction.id} className="player-seat__reaction" initial={{ opacity:0, scale:.35, y:12, rotate:-12 }} animate={{ opacity:1, scale:[.35,1.18,1], y:0, rotate:0 }} exit={{ opacity:0, scale:.7, y:-18 }}>{reaction.emoji}</motion.div>}</AnimatePresence>
       {active && <motion.div layoutId="active-seat" className="player-seat__turn"><span /> Playing</motion.div>}
       <div className="player-seat__cards" aria-label={`${player.handCount} hidden cards`}>
         {[0, 1, 2].slice(0, Math.min(3, player.handCount)).map((cardIndex) => <div key={cardIndex} style={{ transform: `translateX(${(cardIndex - 1) * 11}px) rotate(${(cardIndex - 1) * 7}deg)` }}><CardBack /></div>)}
@@ -209,6 +211,20 @@ export default function OnlineGame({
   );
   const canDraw = isYourTurn && !state.winnerId && !pendingWild && !pendingMiniGame && !state.miniGameResult && !playerHasPlayable;
   const opponents = state.players.filter((player) => player.id !== youId);
+  const latestReaction = (playerId: string) => [...state.reactions].reverse().find((reaction) => reaction.playerId === playerId);
+  const yourReaction = latestReaction(youId);
+  const matchAwards = useMemo(() => {
+    if (!state.matchWinnerId) return [];
+    const leaders = (score: (stats: ActivePublicState["stats"][string]) => number, title: string, emoji: string) => {
+      const ranked = state.players.map((player) => ({ player, value: score(state.stats[player.id]) })).sort((a, b) => b.value - a.value);
+      return ranked[0]?.value > 0 ? { ...ranked[0], title, emoji } : null;
+    };
+    return [
+      leaders((stats) => stats.cardsPlayed, "Table menace", "🔥"),
+      leaders((stats) => stats.unoChallenges, "UNO police", "🚨"),
+      leaders((stats) => stats.rpsWins + stats.coinWins, "Minigame boss", "🎲"),
+    ].filter((award): award is NonNullable<typeof award> => award !== null);
+  }, [state.matchWinnerId, state.players, state.stats]);
   function visualPosition(playerId: string) {
     if (playerId === youId) return "seat-bottom";
     const index = opponents.findIndex((player) => player.id === playerId);
@@ -387,6 +403,7 @@ export default function OnlineGame({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-slate-400">
+          <div className="rounded-full border border-white/10 bg-white/5 px-3 py-2">Round {state.roundNumber} · {state.players.map((player) => `${player.name} ${state.scores[player.id] ?? 0}`).join(" — ")}</div>
           <div>Turn: {playerLabel(state, state.currentPlayerId)}</div>
           <div>Direction: {state.direction === 1 ? "Clockwise" : "Counter"}</div>
           {state.pendingDraw2 > 0 && (
@@ -509,7 +526,7 @@ export default function OnlineGame({
         <div className="space-y-4">
           <div className="arena-board relative min-h-[430px] overflow-hidden rounded-[1.75rem] border border-white/10 p-4">
             {state.players.filter((player) => player.id !== youId).map((player, index, opponents) => (
-              <PlayerSeat key={player.id} player={player} active={state.currentPlayerId === player.id} position={seatPosition(index, opponents.length)} clock={clock} onCallUno={() => send({ type: "action", action: { type: "call_uno_on", targetId: player.id } })} />
+              <PlayerSeat key={player.id} player={player} active={state.currentPlayerId === player.id} position={seatPosition(index, opponents.length)} clock={clock} reaction={latestReaction(player.id)} onCallUno={() => send({ type: "action", action: { type: "call_uno_on", targetId: player.id } })} />
             ))}
             <AnimatePresence>
               {visualEffects.map((effect) => {
@@ -541,6 +558,7 @@ export default function OnlineGame({
                 : "border-slate-800"
             }`}
           >
+            <AnimatePresence>{yourReaction && <motion.div key={yourReaction.id} className="your-reaction" initial={{ opacity:0, scale:.35, y:15, rotate:10 }} animate={{ opacity:1, scale:[.35,1.18,1], y:0, rotate:0 }} exit={{ opacity:0, scale:.7, y:-20 }}>{yourReaction.emoji}</motion.div>}</AnimatePresence>
             {isYourTurn && <motion.div layoutId="active-seat" className="absolute left-1/2 top-[-.75rem] z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#b8f36b] px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#121019]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#121019]"/>Your move</motion.div>}
             {you?.unoWindow && !you.unoCalled && <motion.button className="absolute right-4 top-14 z-20 rounded-full bg-amber-400 px-4 py-2 display-font text-sm font-black text-slate-950 shadow-[0_0_28px_rgba(251,191,36,.38)]" initial={{ scale:0, rotate:-10 }} animate={{ scale:[1,1.08,1], rotate:0 }} transition={{ scale:{repeat:Infinity,duration:1.1} }} onClick={() => send({ type:"action", action:{ type:"call_uno_self" } })}>UNO!</motion.button>}
             {hand.length === 1 && you?.unoCalled && <div className="absolute right-4 top-14 rounded-full border border-[#b8f36b]/30 bg-[#b8f36b]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#b8f36b]">UNO called ✓</div>}
@@ -576,6 +594,9 @@ export default function OnlineGame({
               ))}
             </div>
             <AnimatePresence>{invalidCard && <motion.div className="mx-auto mt-3 w-fit rounded-full border border-rose-400/30 bg-rose-500/10 px-4 py-2 text-xs font-semibold text-rose-200" initial={{ opacity:0, y:5 }} animate={{ opacity:1, y:0 }} exit={{ opacity:0 }}>{invalidCard.message}</motion.div>}</AnimatePresence>
+            <div className="reaction-bar" aria-label="Quick reactions">
+              {['😂','😭','😡','👏','🤨'].map((emoji) => <motion.button key={emoji} type="button" whileHover={{ y:-4, scale:1.12 }} whileTap={{ scale:.82 }} onClick={() => send({ type:"reaction", emoji })} aria-label={`React with ${emoji}`}>{emoji}</motion.button>)}
+            </div>
           </div>
 
         </div>
@@ -1031,7 +1052,14 @@ export default function OnlineGame({
       {state.winnerId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 px-4">
           <div className="w-full max-w-md rounded-2xl border border-amber-400/40 bg-slate-950 p-6 text-center text-sm text-slate-200 shadow-2xl shadow-amber-500/20">
-            {state.winnerId === youId ? (
+            {state.matchWinnerId ? (
+              <>
+                <motion.div className="text-5xl" initial={{ scale:0, rotate:-15 }} animate={{ scale:[0,1.25,1], rotate:0 }}>🏆</motion.div>
+                <div className="mt-3 text-xs uppercase tracking-[0.3em] text-amber-300">Match complete</div>
+                <div className="display-font mt-2 text-3xl font-black text-amber-200">{state.matchWinnerId === youId ? "You own the table!" : `${playerLabel(state, state.matchWinnerId)} wins the match!`}</div>
+                <div className="mt-2 text-slate-300">First to two. No excuses left.</div>
+              </>
+            ) : state.winnerId === youId ? (
               <>
                 <div className="text-xs uppercase tracking-[0.3em] text-amber-300">
                   Champion
@@ -1056,15 +1084,17 @@ export default function OnlineGame({
                 </div>
               </>
             )}
+            <div className="mt-5 grid gap-2">
+              {state.players.slice().sort((a,b) => (state.scores[b.id] ?? 0) - (state.scores[a.id] ?? 0)).map((player) => <div key={player.id} className={`flex items-center justify-between rounded-xl border px-4 py-3 ${player.id === state.winnerId ? "border-amber-400/30 bg-amber-400/10" : "border-white/10 bg-white/5"}`}><span className="font-semibold">{player.name}{player.id === youId ? " (You)" : ""}</span><span className="display-font text-xl font-black">{state.scores[player.id] ?? 0}<small className="ml-1 text-[10px] font-normal text-slate-500">/ 2</small></span></div>)}
+            </div>
+            {state.matchWinnerId && matchAwards.length > 0 && <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">{matchAwards.map((award) => <div className="match-award" key={award.title}><span>{award.emoji}</span><strong>{award.title}</strong><small>{award.player.name} · {award.value}</small></div>)}</div>}
             <div className="mt-5 flex flex-col items-center gap-2">
               <button
                 className="w-full rounded-md bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 hover:bg-emerald-400"
                 onClick={() => send({ type: "play_again" })}
                 disabled={state.rematchVotes.includes(youId)}
               >
-                {state.rematchVotes.includes(youId)
-                  ? "Waiting for others..."
-                  : "Play Again"}
+                {state.rematchVotes.includes(youId) ? "Waiting for others..." : state.matchWinnerId ? "New Match" : `Ready for Round ${state.roundNumber + 1}`}
               </button>
               <div className="text-xs text-slate-500">
                 Rematch votes: {state.rematchVotes.length}/{state.players.length}
