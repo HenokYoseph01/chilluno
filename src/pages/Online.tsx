@@ -4,8 +4,9 @@ import type { ClientMessage, LobbyQueue, PublicState, ServerMessage } from "../t
 import type { deckOutline } from "../types/cards";
 
 const DEFAULT_WS_URL = import.meta.env.DEV
-  ? "ws://localhost:8787"
+  ? "ws://localhost:8797"
   : `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}`;
+const MAX_RECONNECT_ATTEMPTS = 8;
 
 function isCompatibleRoomState(state: PublicState) {
   const candidate = state as PublicState & Record<string, unknown>;
@@ -19,6 +20,7 @@ function isCompatibleRoomState(state: PublicState) {
 export default function Online({ onBack }: { onBack: () => void }) {
   const [connected, setConnected] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const [connectionCycle, setConnectionCycle] = useState(0);
   const [clientId, setClientId] = useState<string | null>(null);
   const inviteCode = useMemo(() => window.location.pathname.match(/^\/room\/([A-Za-z0-9]+)$/)?.[1]?.toUpperCase() ?? "", []);
   const [name, setName] = useState(() => window.localStorage.getItem("chillno-name") ?? "");
@@ -37,7 +39,6 @@ export default function Online({ onBack }: { onBack: () => void }) {
   );
   const socketRef = useRef<WebSocket | null>(null);
   const nameRef = useRef(name);
-  const didUnmountRef = useRef(false);
   const sessionTokenRef = useRef(
     window.localStorage.getItem("chillno-session") ?? window.crypto.randomUUID(),
   );
@@ -52,18 +53,19 @@ export default function Online({ onBack }: { onBack: () => void }) {
   }
 
   useEffect(() => {
-    didUnmountRef.current = false;
+    let cancelled = false;
     let retryTimer: number | null = null;
     let attempts = 0;
 
     const connect = () => {
-      if (didUnmountRef.current) return;
+      if (cancelled) return;
+      const existing = socketRef.current;
+      if (existing && (existing.readyState === WebSocket.OPEN || existing.readyState === WebSocket.CONNECTING)) return;
       const ws = new WebSocket(wsUrl);
       socketRef.current = ws;
 
       ws.onopen = () => {
-        attempts = 0;
-        setReconnectAttempt(0);
+        if (cancelled || socketRef.current !== ws) return;
         setConnected(true);
         setError(null);
         ws.send(JSON.stringify({
@@ -73,19 +75,24 @@ export default function Online({ onBack }: { onBack: () => void }) {
         }));
       };
       ws.onclose = () => {
-        if (didUnmountRef.current) return;
+        if (cancelled || socketRef.current !== ws) return;
         setConnected(false);
         socketRef.current = null;
         attempts += 1;
         setReconnectAttempt(attempts);
+        if (attempts >= MAX_RECONNECT_ATTEMPTS) {
+          setError(`Could not reach ${wsUrl}. Check that the multiplayer server is running, then retry.`);
+          return;
+        }
         const delay = Math.min(1000 * 2 ** (attempts - 1), 10_000);
         retryTimer = window.setTimeout(connect, delay);
       };
       ws.onerror = () => {
-        if (didUnmountRef.current) return;
+        if (cancelled || socketRef.current !== ws) return;
         setError("Connection interrupted. Trying to rejoin…");
       };
       ws.onmessage = (event) => {
+      if (cancelled || socketRef.current !== ws) return;
       let message: ServerMessage;
       try {
         message = JSON.parse(event.data);
@@ -93,6 +100,8 @@ export default function Online({ onBack }: { onBack: () => void }) {
         return;
       }
       if (message.type === "connected") {
+        attempts = 0;
+        setReconnectAttempt(0);
         setClientId(message.id);
         sessionTokenRef.current = message.sessionToken;
         window.localStorage.setItem("chillno-session", message.sessionToken);
@@ -135,18 +144,29 @@ export default function Online({ onBack }: { onBack: () => void }) {
     connect();
 
     return () => {
-      didUnmountRef.current = true;
+      cancelled = true;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
       const liveSocket = socketRef.current;
       socketRef.current = null;
-      if (liveSocket) liveSocket.close();
+      if (liveSocket) {
+        liveSocket.onclose = null;
+        liveSocket.onerror = null;
+        liveSocket.onmessage = null;
+        liveSocket.close();
+      }
     };
-  }, [wsUrl]);
+  }, [wsUrl, connectionCycle]);
 
   function send(message: ClientMessage) {
     if (socketRef.current?.readyState === WebSocket.OPEN) {
       socketRef.current.send(JSON.stringify(message));
     }
+  }
+
+  function retryConnection() {
+    setError(null);
+    setReconnectAttempt(0);
+    setConnectionCycle((cycle) => cycle + 1);
   }
 
   function handleJoinLobby() {
@@ -189,7 +209,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
     return (
       <>
         <OnlineGame state={roomState} hand={hand} youId={clientId} send={send} onLeave={() => { send({ type: "leave_room" }); setRoomState(null); }} />
-        {!connected && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#080711]/80 px-4 backdrop-blur-md"><div className="glass-panel w-full max-w-sm rounded-3xl p-7 text-center"><div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-white/15 border-t-[#b8f36b]"/><div className="display-font mt-5 text-xl font-bold">Rejoining your table…</div><p className="mt-2 text-sm text-slate-400">Your cards and seat are being held. Attempt {reconnectAttempt || 1}.</p></div></div>}
+        {!connected && <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[#080711]/80 px-4 backdrop-blur-md"><div className="glass-panel w-full max-w-sm rounded-3xl p-7 text-center">{reconnectAttempt < MAX_RECONNECT_ATTEMPTS && <div className="mx-auto h-10 w-10 animate-spin rounded-full border-2 border-white/15 border-t-[#b8f36b]"/>}<div className="display-font mt-5 text-xl font-bold">{reconnectAttempt >= MAX_RECONNECT_ATTEMPTS ? "Couldn’t reconnect" : "Rejoining your table…"}</div><p className="mt-2 text-sm text-slate-400">{reconnectAttempt >= MAX_RECONNECT_ATTEMPTS ? "Start the multiplayer server and try again." : `Your cards and seat are being held. Attempt ${reconnectAttempt || 1}.`}</p>{reconnectAttempt >= MAX_RECONNECT_ATTEMPTS && <button className="primary-button mt-5 px-5 py-3" onClick={retryConnection}>Retry connection</button>}</div></div>}
       </>
     );
   }
@@ -390,7 +410,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
         )}
         {error && (
           <div className="mt-3 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
-            {error}
+            <div>{error}</div>{reconnectAttempt >= MAX_RECONNECT_ATTEMPTS && <button className="secondary-button mt-3 px-4 py-2 text-xs" onClick={retryConnection}>Retry connection</button>}
           </div>
         )}
       </div>

@@ -160,7 +160,7 @@ type SessionInfo = {
   lastSeen: number;
 };
 
-const PORT = Number(process.env.PORT ?? 8787);
+const PORT = Number(process.env.PORT ?? 8797);
 const MAX_MESSAGE_BYTES = 16 * 1024;
 const ALLOWED_ORIGINS = new Set((process.env.ALLOWED_ORIGINS ?? "").split(",").map((origin) => origin.trim()).filter(Boolean));
 const wss = new WebSocketServer({ port: PORT, maxPayload: MAX_MESSAGE_BYTES });
