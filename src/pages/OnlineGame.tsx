@@ -129,6 +129,7 @@ export default function OnlineGame({
   const [coinFlipKey, setCoinFlipKey] = useState(0);
   const [coinImpactKey, setCoinImpactKey] = useState(0);
   const [showRules, setShowRules] = useState(true);
+  const [showLeavePrompt, setShowLeavePrompt] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const lastChatIdRef = useRef<number | null>(null);
@@ -444,7 +445,7 @@ export default function OnlineGame({
           <button className="secondary-button px-3 py-2 text-sm" aria-label={muted ? "Turn game sounds on" : "Mute game sounds"} onClick={() => { const next = !muted; setMuted(next); window.localStorage.setItem("chillno-muted", String(next)); }}>{muted ? "Sound off" : "Sound on"}</button>
           <button
             className="rounded-md bg-slate-800 px-3 py-2 text-sm hover:bg-slate-700"
-            onClick={onLeave}
+            onClick={() => setShowLeavePrompt(true)}
           >
             Leave Room
           </button>
@@ -632,7 +633,7 @@ export default function OnlineGame({
         </div>
       </div>
 
-      <AnimatePresence>{eventLocked && <motion.div className="pointer-events-auto fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
+      <AnimatePresence>{eventLocked && <motion.div className="pointer-events-none fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
 
       {pendingWild && (
         <motion.div className="wild-picker fixed inset-0 z-50 flex items-center justify-center px-4" initial={{ opacity:0 }} animate={{ opacity:1 }}>
@@ -1128,7 +1129,7 @@ export default function OnlineGame({
               </div>
               <button
                 className="text-xs text-slate-400 hover:text-slate-200"
-                onClick={onLeave}
+                onClick={() => setShowLeavePrompt(true)}
               >
                 Leave Room
               </button>
@@ -1136,6 +1137,72 @@ export default function OnlineGame({
           </div>
         </div>
       )}
+
+      <AnimatePresence>
+        {showLeavePrompt && (
+          <motion.div
+            className="fixed inset-0 z-[95] flex items-center justify-center bg-black/80 px-4 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setShowLeavePrompt(false)}
+          >
+            <motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="leave-room-title"
+              className="w-full max-w-sm rounded-3xl border border-white/10 bg-[#12101d] p-6 text-center shadow-2xl"
+              initial={{ opacity: 0, scale: 0.9, y: 18 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.94, y: 12 }}
+              onClick={(event) => event.stopPropagation()}
+            >
+              {state.status === "finished" || state.winnerId ? (
+                <>
+                  <div className="text-4xl">🔄</div>
+                  <h2 id="leave-room-title" className="display-font mt-3 text-2xl font-black text-white">One more game bro?</h2>
+                  <p className="mt-2 text-sm text-slate-400">The table is still warm. Run it back before you dip.</p>
+                  {state.players.length > 1 && (
+                    <button
+                      className="primary-button mt-5 w-full px-4 py-3"
+                      onClick={() => {
+                        send({ type: "play_again" });
+                        setShowLeavePrompt(false);
+                      }}
+                    >
+                      Run it back
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="text-4xl">🏃💨</div>
+                  <h2 id="leave-room-title" className="display-font mt-3 text-2xl font-black text-rose-200">Rage quit?</h2>
+                  <p className="mt-2 text-sm text-slate-400">
+                    {state.players.length === 2
+                      ? "Leave now and the other player wins."
+                      : `Leave now and the other ${state.players.length - 1} players will keep battling.`}
+                  </p>
+                </>
+              )}
+              <div className="mt-5 grid gap-2">
+                <button
+                  className="w-full rounded-xl bg-rose-500 px-4 py-3 text-sm font-black text-white transition hover:bg-rose-400"
+                  onClick={onLeave}
+                >
+                  {state.status === "finished" || state.winnerId ? "Nah, I'm leaving" : "Yeah, I'm out"}
+                </button>
+                <button
+                  className="secondary-button w-full px-4 py-3"
+                  onClick={() => setShowLeavePrompt(false)}
+                >
+                  Stay at the table
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

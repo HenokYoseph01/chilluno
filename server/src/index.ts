@@ -839,6 +839,10 @@ wss.on("connection", (ws: WebSocket, request) => {
         send(ws, { type: "error", message: "Room is not private." });
         return;
       }
+      if (room.status !== "lobby") {
+        send(ws, { type: "error", message: "That game has already started." });
+        return;
+      }
       if (room.players.length >= room.size) {
         send(ws, { type: "error", message: "Room is full." });
         return;
@@ -879,6 +883,9 @@ wss.on("connection", (ws: WebSocket, request) => {
 
     if (message.type === "leave_room") {
       withRoom(client, (room) => {
+        const wasActiveGame = room.status === "playing" && !room.state.winnerId;
+        const leavingIndex = room.players.findIndex((player) => player.id === client.id);
+        const currentIdBefore = room.players[room.state.currentPlayerIndex]?.id;
         room.rematchVotes.delete(client.id);
         room.readyPlayers.delete(client.id);
         clearUnoTimer(room.id, client.id);
@@ -888,22 +895,41 @@ wss.on("connection", (ws: WebSocket, request) => {
         delete room.state.unoWindow[client.id];
         delete room.scores[client.id];
         delete room.stats[client.id];
-        if (room.players.length < 2) {
-          if (room.code) {
-            roomCodes.delete(room.code);
-          }
-          closeRoom(room, "Room closed (not enough players).");
+        if (room.players.length === 0) {
+          closeRoom(room, "Room closed.");
           return;
         }
         if (room.hostId === client.id) {
           room.hostId = room.players[0]?.id ?? null;
         }
+        const pending = room.state.pendingMiniGame;
+        if (pending && (pending.throwerId === client.id || pending.targetId === client.id)) {
+          room.state.pendingMiniGame = null;
+          room.state.miniGameResult = null;
+        }
+        if (wasActiveGame && room.players.length === 1) {
+          const survivor = room.players[0];
+          room.state.currentPlayerIndex = 0;
+          room.state = addHistoryEvent(room.state, `${client.name} rage quit. ${survivor.name} wins by survival.`);
+          recordRoundWin(room, survivor.id);
+          pushRoomState(room);
+          return;
+        }
+        if (room.status === "finished" && room.players.length < 2) {
+          closeRoom(room, `${client.name} left after the game.`);
+          return;
+        }
         room.state = addHistoryEvent(
           room.state,
-          `${client.name} left the room.`,
+          wasActiveGame ? `${client.name} rage quit. The game continues.` : `${client.name} left the room.`,
         );
-        if (room.state.currentPlayerIndex >= room.players.length) {
-          room.state.currentPlayerIndex = 0;
+        if (currentIdBefore === client.id) {
+          room.state.currentPlayerIndex = room.state.direction === 1
+            ? leavingIndex % room.players.length
+            : (leavingIndex - 1 + room.players.length) % room.players.length;
+        } else {
+          const currentIndex = room.players.findIndex((player) => player.id === currentIdBefore);
+          room.state.currentPlayerIndex = currentIndex >= 0 ? currentIndex : 0;
         }
         pushRoomState(room);
       });
@@ -915,7 +941,7 @@ wss.on("connection", (ws: WebSocket, request) => {
 
     if (message.type === "play_again") {
       withRoom(client, (room) => {
-        if (room.status !== "finished") return;
+        if (room.status !== "finished" || room.players.length < 2) return;
         room.rematchVotes.add(client.id);
         if (room.rematchVotes.size === room.players.length) {
           if (room.matchWinnerId) {
@@ -1015,7 +1041,6 @@ wss.on("connection", (ws: WebSocket, request) => {
           return;
         }
         if (Date.now() < room.eventLockedUntil) {
-          send(ws, { type: "error", message: "Wait for the current event to finish." });
           return;
         }
         const playerId = client.id;
@@ -1288,26 +1313,62 @@ wss.on("connection", (ws: WebSocket, request) => {
               closeRoom(liveRoom, "Room closed.");
               return;
             }
-          } else if (liveRoom.status === "playing") {
+          } else {
+            const wasActiveGame = liveRoom.status === "playing" && !liveRoom.state.winnerId;
+            const leavingIndex = liveRoom.players.findIndex((entry) => entry.id === client.id);
+            const currentIdBefore = liveRoom.players[liveRoom.state.currentPlayerIndex]?.id;
             const pending = liveRoom.state.pendingMiniGame;
             if (pending && (pending.throwerId === client.id || pending.targetId === client.id)) {
               liveRoom.state.pendingMiniGame = null;
+              liveRoom.state.miniGameResult = null;
             }
-            if (currentPlayerId(liveRoom) === client.id) {
-              liveRoom.state.currentPlayerIndex = advanceIndex(
-                liveRoom,
-                liveRoom.state.currentPlayerIndex,
-                1,
+            liveRoom.rematchVotes.delete(client.id);
+            liveRoom.readyPlayers.delete(client.id);
+            liveRoom.players = liveRoom.players.filter((entry) => entry.id !== client.id);
+            delete liveRoom.state.hands[client.id];
+            delete liveRoom.state.unoCalled[client.id];
+            delete liveRoom.state.unoWindow[client.id];
+            delete liveRoom.scores[client.id];
+            delete liveRoom.stats[client.id];
+            client.roomId = null;
+            syncSession(client);
+
+            if (liveRoom.players.length === 0) {
+              closeRoom(liveRoom, "Room closed.");
+              return;
+            }
+            if (liveRoom.hostId === client.id) {
+              liveRoom.hostId = liveRoom.players[0]?.id ?? null;
+            }
+            if (wasActiveGame && liveRoom.players.length === 1) {
+              const survivor = liveRoom.players[0];
+              liveRoom.state.currentPlayerIndex = 0;
+              liveRoom.state = addHistoryEvent(
+                liveRoom.state,
+                `${client.name} rage quit. ${survivor.name} wins by survival.`,
               );
+              recordRoundWin(liveRoom, survivor.id);
+              pushRoomState(liveRoom);
+              return;
+            }
+            if (liveRoom.status === "finished" && liveRoom.players.length < 2) {
+              closeRoom(liveRoom, `${client.name} left after the game.`);
+              return;
+            }
+            if (currentIdBefore === client.id) {
+              liveRoom.state.currentPlayerIndex = liveRoom.state.direction === 1
+                ? leavingIndex % liveRoom.players.length
+                : (leavingIndex - 1 + liveRoom.players.length) % liveRoom.players.length;
+            } else {
+              const currentIndex = liveRoom.players.findIndex((entry) => entry.id === currentIdBefore);
+              liveRoom.state.currentPlayerIndex = currentIndex >= 0 ? currentIndex : 0;
             }
             liveRoom.state = addHistoryEvent(
               liveRoom.state,
-              `${client.name} did not reconnect. Their turn was skipped.`,
+              wasActiveGame
+                ? `${client.name} did not reconnect and rage quit. The game continues.`
+                : `${client.name} left after the game.`,
             );
-            if (liveRoom.players.filter((entry) => entry.connected).length < 2) {
-              closeRoom(liveRoom, "Room closed because too few players remained connected.");
-              return;
-            }
           }
           pushRoomState(liveRoom);
         }, RECONNECT_GRACE_MS);
