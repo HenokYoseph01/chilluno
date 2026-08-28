@@ -116,6 +116,10 @@ export default function Online({ onBack }: { onBack: () => void }) {
         setClientId(message.id);
         sessionTokenRef.current = message.sessionToken;
         window.localStorage.setItem("chillno-session", message.sessionToken);
+        if (inviteCode && nameRef.current.trim() && !message.resumed) {
+          ws.send(JSON.stringify({ type: "set_name", name: nameRef.current.trim() }));
+          ws.send(JSON.stringify({ type: "join_private", code: inviteCode }));
+        }
       }
       if (message.type === "lobby_state") {
         setQueues(message.queues);
@@ -166,7 +170,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
         liveSocket.close();
       }
     };
-  }, [wsUrl, connectionCycle]);
+  }, [wsUrl, connectionCycle, inviteCode]);
 
   function send(message: ClientMessage) {
     if (socketRef.current?.readyState === WebSocket.OPEN) {

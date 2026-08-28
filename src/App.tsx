@@ -8,9 +8,13 @@ type Screen = "menu" | "rules_ai" | "rules_people" | "ai" | "online";
 type AiDifficulty = "beginner" | "intermediate" | "insane";
 
 function App() {
-  const [screen, setScreen] = useState<Screen>("menu");
+  const [screen, setScreen] = useState<Screen>(() => /^\/room\/[A-Za-z0-9]+\/?$/.test(window.location.pathname) ? "online" : "menu");
   const [gameSession, setGameSession] = useState(0);
   const [aiDifficulty, setAiDifficulty] = useState<AiDifficulty>("intermediate");
+  const goHome = () => {
+    if (window.location.pathname !== "/") window.history.replaceState({}, "", "/");
+    setScreen("menu");
+  };
 
   if (screen === "menu") {
     return (
@@ -51,7 +55,7 @@ function App() {
   if (screen === "online") {
     return (
       <div className="app-shell text-slate-100">
-        <Online onBack={() => setScreen("menu")} />
+        <Online onBack={goHome} />
       </div>
     );
   }

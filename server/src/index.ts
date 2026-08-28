@@ -814,6 +814,7 @@ wss.on("connection", (ws: WebSocket, request) => {
         send(ws, { type: "error", message: "Name is required." });
         return;
       }
+      if (client.roomId) return;
       removeFromQueues(client.id);
       const code = message.code.trim().toUpperCase();
       const roomId = roomCodes.get(code);
