@@ -32,7 +32,8 @@ export default function Online({ onBack }: { onBack: () => void }) {
   const [hand, setHand] = useState<deckOutline[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [privateCode, setPrivateCode] = useState(inviteCode);
-  const [lobbyTab, setLobbyTab] = useState<"public" | "private">(inviteCode ? "private" : "public");
+  const [customCode, setCustomCode] = useState("");
+  const [lobbyTab, setLobbyTab] = useState<"public" | "create" | "join">(inviteCode ? "join" : "public");
   const nameReady = name.trim().length > 0;
   const wsUrl = useMemo(
     () => import.meta.env.VITE_WS_URL ?? DEFAULT_WS_URL,
@@ -206,7 +207,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
       return;
     }
     send({ type: "set_name", name });
-    send({ type: "create_private", desiredPlayers });
+    send({ type: "create_private", desiredPlayers, customCode: customCode.trim() || undefined });
   }
 
   function handleJoinPrivate() {
@@ -322,45 +323,15 @@ export default function Online({ onBack }: { onBack: () => void }) {
             Please enter a name to join a room.
           </div>
         )}
-        <div className="mt-4 flex items-center gap-2">
-          <button
-            className={`rounded-md px-3 py-2 text-sm ${
-              lobbyTab === "public"
-                ? "bg-emerald-600 text-white"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-            }`}
-            onClick={() => setLobbyTab("public")}
-          >
-            Public Lobby
-          </button>
-          <button
-            className={`rounded-md px-3 py-2 text-sm ${
-              lobbyTab === "private"
-                ? "bg-emerald-600 text-white"
-                : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-            }`}
-            onClick={() => setLobbyTab("private")}
-          >
-            Private Room
-          </button>
+        <div className="mt-5 grid gap-3 sm:grid-cols-3">
+          {[
+            { id:"public", icon:"⚡", title:"Quick Match", text:"Get matched automatically." },
+            { id:"create", icon:"＋", title:"Create Room", text:"Host a private table." },
+            { id:"join", icon:"→", title:"Join Room", text:"Enter a friend's code." },
+          ].map((option) => <button key={option.id} className={`rounded-2xl border p-4 text-left transition ${lobbyTab === option.id ? "border-[#b8f36b]/60 bg-[#b8f36b]/10" : "border-white/10 bg-white/5 hover:bg-white/10"}`} onClick={() => { setLobbyTab(option.id as typeof lobbyTab); setError(null); }}><span className="text-xl">{option.icon}</span><strong className="mt-2 block text-sm text-white">{option.title}</strong><small className="mt-1 block text-[11px] text-slate-400">{option.text}</small></button>)}
         </div>
 
-        <div className="mt-4 text-slate-400">Preferred Room Size</div>
-        <div className="mt-2 flex flex-wrap gap-2">
-          {[2, 3, 4].map((size) => (
-            <button
-              key={size}
-              className={`rounded-md px-3 py-2 text-sm ${
-                desiredPlayers === size
-                  ? "bg-emerald-600 text-white"
-                  : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-              }`}
-              onClick={() => setDesiredPlayers(size as 2 | 3 | 4)}
-            >
-              {size} Players
-            </button>
-          ))}
-        </div>
+        {lobbyTab !== "join" && <><div className="mt-5 text-xs font-bold uppercase tracking-widest text-slate-500">How many players?</div><div className="mt-2 grid grid-cols-3 gap-2">{[2, 3, 4].map((size) => <button key={size} className={`rounded-xl px-3 py-3 text-sm font-bold ${desiredPlayers === size ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`} onClick={() => setDesiredPlayers(size as 2 | 3 | 4)}>{size} Players</button>)}</div></>}
 
         {lobbyTab === "public" ? (
           <>
@@ -392,35 +363,36 @@ export default function Online({ onBack }: { onBack: () => void }) {
               </div>
             )}
           </>
-        ) : (
+        ) : lobbyTab === "create" ? (
           <>
-            <div className="mt-4 text-slate-400">Join With Code</div>
+            <div className="mt-5 rounded-2xl border border-white/10 bg-black/15 p-4"><div className="font-bold text-white">Choose a room code <span className="font-normal text-slate-500">(optional)</span></div><p className="mt-1 text-xs text-slate-400">Make it memorable, or leave it blank and we'll generate one.</p>
             <input
               className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm uppercase tracking-widest text-slate-100 focus:border-emerald-500 focus:outline-none"
-              placeholder="ROOMCODE"
-              value={privateCode}
-              onChange={(event) => setPrivateCode(event.target.value)}
-            />
+              placeholder="e.g. RAGE123"
+              maxLength={10}
+              value={customCode}
+              onChange={(event) => setCustomCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+            /><div className="mt-1 text-[10px] text-slate-500">4–10 letters or numbers when provided.</div></div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                className="rounded-md bg-emerald-600 px-4 py-2 text-sm text-white hover:bg-emerald-500 disabled:opacity-50"
+                className="primary-button px-6 py-3 text-sm disabled:opacity-50"
                 onClick={handleCreatePrivate}
-                disabled={!connected || !nameReady}
+                disabled={!connected || !nameReady || (!!customCode && customCode.length < 4)}
               >
-                Create Private Room
+                Create My Room
               </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="mt-5 rounded-2xl border border-white/10 bg-black/15 p-4"><div className="font-bold text-white">Enter the room code</div><p className="mt-1 text-xs text-slate-400">Ask the host for their code or open the invite link they sent.</p><input className="mt-3 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-center display-font text-xl uppercase tracking-[.2em] text-[#b8f36b] focus:border-emerald-500 focus:outline-none" placeholder="ROOMCODE" maxLength={10} value={privateCode} onChange={(event) => setPrivateCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))} /></div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
               <button
-                className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700 disabled:opacity-50"
+                className="primary-button px-6 py-3 text-sm disabled:opacity-50"
                 onClick={handleJoinPrivate}
                 disabled={!connected || !privateCode.trim() || !nameReady}
               >
-                Join Room
-              </button>
-              <button
-                className="rounded-md bg-slate-800 px-4 py-2 text-sm hover:bg-slate-700"
-                onClick={onBack}
-              >
-                Back
+                Join This Room
               </button>
             </div>
           </>

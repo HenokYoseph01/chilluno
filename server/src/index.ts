@@ -29,7 +29,7 @@ type ClientMessage =
   | { type: "hello"; name?: string; sessionToken: string }
   | { type: "set_name"; name: string }
   | { type: "join_lobby"; desiredPlayers: 2 | 3 | 4 }
-  | { type: "create_private"; desiredPlayers: 2 | 3 | 4 }
+  | { type: "create_private"; desiredPlayers: 2 | 3 | 4; customCode?: string }
   | { type: "join_private"; code: string }
   | { type: "leave_lobby" }
   | { type: "leave_room" }
@@ -189,7 +189,8 @@ function isClientMessage(value: unknown): value is ClientMessage {
   const message = value as Record<string, unknown>;
   if (message.type === "hello") return typeof message.sessionToken === "string" && (message.name === undefined || typeof message.name === "string");
   if (message.type === "set_name") return typeof message.name === "string";
-  if (message.type === "join_lobby" || message.type === "create_private") return message.desiredPlayers === 2 || message.desiredPlayers === 3 || message.desiredPlayers === 4;
+  if (message.type === "join_lobby") return message.desiredPlayers === 2 || message.desiredPlayers === 3 || message.desiredPlayers === 4;
+  if (message.type === "create_private") return (message.desiredPlayers === 2 || message.desiredPlayers === 3 || message.desiredPlayers === 4) && (message.customCode === undefined || typeof message.customCode === "string");
   if (message.type === "join_private") return typeof message.code === "string";
   if (message.type === "set_ready") return typeof message.ready === "boolean";
   if (message.type === "chat") return typeof message.text === "string";
@@ -557,11 +558,9 @@ function generateRoomCode() {
   return code;
 }
 
-function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo) {
-  let code = generateRoomCode();
-  while (roomCodes.has(code)) {
-    code = generateRoomCode();
-  }
+function createPrivateRoom(size: 2 | 3 | 4, host: ClientInfo, customCode?: string) {
+  let code = customCode?.trim().toUpperCase() || generateRoomCode();
+  while (!customCode && roomCodes.has(code)) code = generateRoomCode();
   const roomId = randomUUID();
   const room: Room = {
     id: roomId,
@@ -804,7 +803,16 @@ wss.on("connection", (ws: WebSocket, request) => {
       }
       removeFromQueues(client.id);
       if (client.roomId) return;
-      createPrivateRoom(message.desiredPlayers, client);
+      const customCode = message.customCode?.trim().toUpperCase() ?? "";
+      if (customCode && !/^[A-Z0-9]{4,10}$/.test(customCode)) {
+        send(ws, { type: "error", message: "Custom room codes must be 4–10 letters or numbers." });
+        return;
+      }
+      if (customCode && roomCodes.has(customCode)) {
+        send(ws, { type: "error", message: "That room code is already taken. Try another one." });
+        return;
+      }
+      createPrivateRoom(message.desiredPlayers, client, customCode || undefined);
       broadcastLobbyState();
       return;
     }

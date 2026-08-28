@@ -105,7 +105,7 @@ export type ClientMessage =
   | { type: "hello"; name?: string; sessionToken: string }
   | { type: "set_name"; name: string }
   | { type: "join_lobby"; desiredPlayers: 2 | 3 | 4 }
-  | { type: "create_private"; desiredPlayers: 2 | 3 | 4 }
+  | { type: "create_private"; desiredPlayers: 2 | 3 | 4; customCode?: string }
   | { type: "join_private"; code: string }
   | { type: "leave_lobby" }
   | { type: "leave_room" }
