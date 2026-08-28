@@ -418,6 +418,7 @@ export default function OnlineGame({
 
   return (
     <div className="mx-auto flex min-h-screen max-w-6xl flex-col gap-5 px-4 py-5 pb-28">
+      {codeCopied && <div className="copy-toast" role="status" aria-live="polite"><span>✓</span><div><strong>Room code copied</strong><small>Drop it in the group chat.</small></div></div>}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="eyebrow">

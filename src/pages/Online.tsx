@@ -21,6 +21,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
   const [connected, setConnected] = useState(false);
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
   const [connectionCycle, setConnectionCycle] = useState(0);
+  const [copyNotice, setCopyNotice] = useState(false);
   const [clientId, setClientId] = useState<string | null>(null);
   const inviteCode = useMemo(() => window.location.pathname.match(/^\/room\/([A-Za-z0-9]+)$/)?.[1]?.toUpperCase() ?? "", []);
   const [name, setName] = useState(() => window.localStorage.getItem("chillno-name") ?? "");
@@ -50,6 +51,16 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   function inviteUrl(code: string) {
     return `${window.location.origin}/room/${code}`;
+  }
+
+  async function copyInvite(code: string) {
+    try {
+      await navigator.clipboard.writeText(inviteUrl(code));
+      setCopyNotice(true);
+      window.setTimeout(() => setCopyNotice(false), 2200);
+    } catch {
+      setError("Could not copy the invite. Copy the room code manually.");
+    }
   }
 
   useEffect(() => {
@@ -220,6 +231,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
     const everyoneReady = roomState.players.length >= 2 && roomState.players.every((player) => roomState.readyPlayerIds.includes(player.id));
     return (
       <div className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center gap-6 px-4 py-10">
+        {copyNotice && <div className="copy-toast" role="status" aria-live="polite"><span>✓</span><div><strong>Invite copied</strong><small>Send it to your crew.</small></div></div>}
         <div>
         <div className="eyebrow">
           Your private table
@@ -233,7 +245,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
           <div className="text-slate-400">Room Code</div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <div className="display-font rounded-2xl bg-black/25 px-5 py-3 text-3xl font-bold tracking-[.22em] text-[#b8f36b]">{roomState.roomCode ?? "—"}</div>
-            <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={async () => { const code = roomState.roomCode; if (!code) return; await navigator.clipboard.writeText(inviteUrl(code)); setError("Invite link copied — send it to your crew."); }}>Copy invite</button>
+            <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={() => { const code = roomState.roomCode; if (code) void copyInvite(code); }}>Copy invite</button>
             {roomState.roomCode && typeof navigator.share === "function" && <button className="secondary-button px-4 py-3 text-xs font-bold" onClick={() => navigator.share({ title:"Join my Chillno room", text:"Pull up to my Chillno table", url:inviteUrl(roomState.roomCode!) })}>Share</button>}
           </div>
           <div className="mt-3 text-xs text-slate-400">
@@ -273,6 +285,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
 
   return (
       <div className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-4 py-10">
+      {copyNotice && <div className="copy-toast" role="status" aria-live="polite"><span>✓</span><div><strong>Invite copied</strong><small>Send it to your crew.</small></div></div>}
       <div>
         <div className="eyebrow">
           Multiplayer lounge
