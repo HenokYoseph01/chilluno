@@ -14,7 +14,7 @@ function isCompatibleRoomState(state: PublicState) {
     typeof candidate.scores === "object" && candidate.scores !== null &&
     typeof candidate.stats === "object" && candidate.stats !== null &&
     Array.isArray(candidate.reactions) &&
-    typeof candidate.eventLockedUntil === "number";
+    typeof candidate.eventLockedUntil === "number"; 
 }
 
 export default function Online({ onBack }: { onBack: () => void }) {
