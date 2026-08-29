@@ -1040,7 +1040,14 @@ wss.on("connection", (ws: WebSocket, request) => {
           send(ws, { type: "error", message: "Wait for the minigame reveal to finish." });
           return;
         }
-        if (Date.now() < room.eventLockedUntil) {
+        const canRespondDuringAnimation =
+          message.action.type === "call_uno_self" ||
+          message.action.type === "call_uno_on" ||
+          message.action.type === "choose_wild" ||
+          message.action.type === "set_mini_color" ||
+          message.action.type === "rps_choice" ||
+          message.action.type === "coin_choice";
+        if (Date.now() < room.eventLockedUntil && !canRespondDuringAnimation) {
           return;
         }
         const playerId = client.id;
@@ -1057,7 +1064,7 @@ wss.on("connection", (ws: WebSocket, request) => {
               return;
             }
           }
-          lockRoomEvents(room, 900);
+          lockRoomEvents(room, 320);
           if (room.state.pendingDraw2 > 0) {
             const count = room.state.pendingDraw2;
             room.state = drawCards(room.state, playerId, count);
@@ -1095,7 +1102,7 @@ wss.on("connection", (ws: WebSocket, request) => {
           const top = room.state.discardPile[room.state.discardPile.length - 1].card;
           if (!isPlayableForTurn(card, top, room.state.pendingDraw2)) return;
           if (room.state.pendingDraw2 > 0 && card.value !== "Draw2") return;
-          lockRoomEvents(room, card.value === "RPS" || card.value === "HT" || card.value === "Wild" || card.value === "Wild4" ? 1400 : 1000);
+          lockRoomEvents(room, card.value === "RPS" || card.value === "HT" || card.value === "Wild" || card.value === "Wild4" ? 850 : 350);
 
           const nextHand = hand.filter((_, i) => i !== action.index);
           room.state.hands[playerId] = nextHand;
@@ -1164,7 +1171,7 @@ wss.on("connection", (ws: WebSocket, request) => {
         if (message.action.type === "choose_wild") {
           const pending = room.state.pendingWild;
           if (!pending || pending.playerId !== playerId) return;
-          lockRoomEvents(room, 900);
+          lockRoomEvents(room, 300);
           const last = room.state.discardPile[room.state.discardPile.length - 1];
           const updatedDiscard = { ...last.card, color: message.action.color };
           const countsBefore = handCounts(room);
@@ -1224,7 +1231,7 @@ wss.on("connection", (ws: WebSocket, request) => {
           const hand = room.state.hands[playerId] ?? [];
           if (hand.length !== 1) return;
           if (room.state.unoCalled[playerId]) return;
-          lockRoomEvents(room, 900);
+          lockRoomEvents(room, 350);
           room.state = {
             ...room.state,
             unoCalled: { ...room.state.unoCalled, [playerId]: true },
@@ -1244,7 +1251,7 @@ wss.on("connection", (ws: WebSocket, request) => {
           const hand = room.state.hands[targetId] ?? [];
           if (hand.length !== 1) return;
           if (room.state.unoCalled[targetId]) return;
-          lockRoomEvents(room, 1200);
+          lockRoomEvents(room, 500);
           room.state = drawCards(room.state, targetId, 2);
           room.stats[playerId].unoChallenges += 1;
           if (room.stats[targetId]) room.stats[targetId].cardsDrawn += 2;

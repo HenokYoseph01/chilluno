@@ -130,6 +130,7 @@ export default function OnlineGame({
   const [coinImpactKey, setCoinImpactKey] = useState(0);
   const [showRules, setShowRules] = useState(true);
   const [showLeavePrompt, setShowLeavePrompt] = useState(false);
+  const [unoCallPending, setUnoCallPending] = useState(false);
   const [chatInput, setChatInput] = useState("");
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const lastChatIdRef = useRef<number | null>(null);
@@ -220,6 +221,16 @@ export default function OnlineGame({
   const opponents = state.players.filter((player) => player.id !== youId);
   const latestReaction = (playerId: string) => [...state.reactions].reverse().find((reaction) => reaction.playerId === playerId);
   const yourReaction = latestReaction(youId);
+  const requestUnoCall = useCallback(() => {
+    if (!you?.unoWindow || you.unoCalled || unoCallPending) return;
+    setUnoCallPending(true);
+    send({ type: "action", action: { type: "call_uno_self" } });
+  }, [send, unoCallPending, you]);
+
+  useEffect(() => {
+    if (!you?.unoWindow || you.unoCalled) setUnoCallPending(false);
+  }, [you?.unoCalled, you?.unoWindow]);
+
   const matchAwards = useMemo(() => {
     if (!state.matchWinnerId) return [];
     const leaders = (score: (stats: ActivePublicState["stats"][string]) => number, title: string, emoji: string) => {
@@ -347,7 +358,7 @@ export default function OnlineGame({
       }
       if (key === "u") {
         if (you?.unoWindow && !you.unoCalled) {
-          send({ type: "action", action: { type: "call_uno_self" } });
+          requestUnoCall();
         }
       }
       if (key === "c") {
@@ -374,6 +385,7 @@ export default function OnlineGame({
     pendingMiniGame,
     pendingWild,
     playerHasPlayable,
+    requestUnoCall,
     send,
     state.players,
     state.winnerId,
@@ -589,7 +601,8 @@ export default function OnlineGame({
           >
             <AnimatePresence>{yourReaction && <motion.div key={yourReaction.id} className="your-reaction" initial={{ opacity:0, scale:.35, y:15, rotate:10 }} animate={{ opacity:1, scale:[.35,1.18,1], y:0, rotate:0 }} exit={{ opacity:0, scale:.7, y:-20 }}>{yourReaction.emoji}</motion.div>}</AnimatePresence>
             {isYourTurn && <motion.div layoutId="active-seat" className="absolute left-1/2 top-[-.75rem] z-10 flex -translate-x-1/2 items-center gap-1 rounded-full bg-[#b8f36b] px-3 py-1 text-[10px] font-black uppercase tracking-wider text-[#121019]"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#121019]"/>Your move</motion.div>}
-            {you?.unoWindow && !you.unoCalled && <motion.button className="absolute right-4 top-14 z-20 rounded-full bg-amber-400 px-4 py-2 display-font text-sm font-black text-slate-950 shadow-[0_0_28px_rgba(251,191,36,.38)]" initial={{ scale:0, rotate:-10 }} animate={{ scale:[1,1.08,1], rotate:0 }} transition={{ scale:{repeat:Infinity,duration:1.1} }} onClick={() => send({ type:"action", action:{ type:"call_uno_self" } })}>UNO!</motion.button>}
+            {you?.unoWindow && !you.unoCalled && !unoCallPending && <motion.button className="absolute right-4 top-14 z-20 rounded-full bg-amber-400 px-4 py-2 display-font text-sm font-black text-slate-950 shadow-[0_0_28px_rgba(251,191,36,.38)]" initial={{ scale:0, rotate:-10 }} animate={{ scale:[1,1.08,1], rotate:0 }} transition={{ scale:{repeat:Infinity,duration:1.1} }} onClick={requestUnoCall}>UNO!</motion.button>}
+            {unoCallPending && <div className="absolute right-4 top-14 rounded-full border border-amber-300/30 bg-amber-300/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-amber-200">UNO sent…</div>}
             {hand.length === 1 && you?.unoCalled && <div className="absolute right-4 top-14 rounded-full border border-[#b8f36b]/30 bg-[#b8f36b]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-[#b8f36b]">UNO called ✓</div>}
             <div className="flex items-center justify-between"><div className="flex items-center gap-2"><div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-violet-500 to-rose-400 font-black">{you?.name.slice(0,1).toUpperCase()}</div><div><div className="text-sm font-bold text-slate-100">{you?.name ?? "You"}</div><div className="text-xs text-slate-500">Your hand · {hand.length} cards</div></div></div><div className="text-xs text-slate-500">Bottom seat</div></div>
             <div className="card-hand mt-3">
@@ -633,7 +646,6 @@ export default function OnlineGame({
         </div>
       </div>
 
-      <AnimatePresence>{eventLocked && <motion.div className="pointer-events-none fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
 
       {pendingWild && (
         <motion.div className="wild-picker fixed inset-0 z-50 flex items-center justify-center px-4" initial={{ opacity:0 }} animate={{ opacity:1 }}>

@@ -603,7 +603,7 @@ export default function Game({
 
   function drawCard(player: Player) {
     if (eventLocked) return;
-    lockEvents(900);
+    lockEvents(320);
     setGame((prev) => {
       if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       if (prev.pendingDraw2 > 0 && prev.currentPlayer === player) {
@@ -626,7 +626,7 @@ export default function Game({
     const snapshotCard = snapshotHand[index];
     const snapshotTop = game.discardPile.at(-1)?.card;
     if (!snapshotCard || !snapshotTop || game.winner || game.currentPlayer !== player || game.pendingWild || game.pendingMiniGame || !canPlayFinalCard(snapshotHand.length, game.unoCalled[player]) || (game.pendingDraw2 > 0 ? snapshotCard.value !== "Draw2" : !isPlayable(snapshotCard, snapshotTop))) return;
-    lockEvents(snapshotCard.value === "RPS" || snapshotCard.value === "HT" || snapshotCard.value === "Wild" || snapshotCard.value === "Wild4" ? 1400 : 1000);
+    lockEvents(snapshotCard.value === "RPS" || snapshotCard.value === "HT" || snapshotCard.value === "Wild" || snapshotCard.value === "Wild4" ? 850 : 350);
     setGame((prev) => {
       if (prev.winner || prev.currentPlayer !== player || prev.pendingWild) {
         return prev;
@@ -691,8 +691,7 @@ export default function Game({
   }
 
   function callUnoSelf(player: Player) {
-    if (eventLocked) return;
-    lockEvents(900);
+    lockEvents(350);
     setGame((prev) => {
       if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       const hand = player === "player" ? prev.playerHand : prev.aiHand;
@@ -706,8 +705,7 @@ export default function Game({
   }
 
   function callUnoOn(target: Player) {
-    if (eventLocked) return;
-    lockEvents(1200);
+    lockEvents(500);
     setGame((prev) => {
       if (prev.winner || prev.pendingWild || prev.pendingMiniGame) return prev;
       const hand = target === "player" ? prev.playerHand : prev.aiHand;
@@ -726,7 +724,6 @@ export default function Game({
   }
 
   function showUnoBanner(message: string) {
-    lockEvents(1400);
     setUnoBanner(message);
     if (unoBannerTimer.current !== null) {
       window.clearTimeout(unoBannerTimer.current);
@@ -743,8 +740,7 @@ export default function Game({
   }
 
   function chooseWildColor(color: Color) {
-    if (eventLocked) return;
-    lockEvents(900);
+    lockEvents(300);
     setGame((prev) => {
       if (!prev.pendingWild || prev.pendingWild.player !== "player") {
         return prev;
@@ -920,7 +916,7 @@ export default function Game({
       return;
     }
     const timer = setTimeout(() => {
-      lockEvents(1200);
+      lockEvents(500);
       setGame((prev) => {
         if (
           prev.winner ||
@@ -1440,7 +1436,6 @@ export default function Game({
       </div>
 
       <AnimatePresence>{winner && matchReward && <motion.div className="fixed inset-0 z-[55] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><motion.section role="dialog" aria-modal="true" aria-labelledby="solo-result-title" className="glass-panel w-full max-w-sm rounded-3xl p-6 text-center" initial={{ y:30, scale:.92 }} animate={{ y:0, scale:1 }}><div className="text-5xl">{winner === "player" ? "🏆" : "🎴"}</div><h2 id="solo-result-title" className="display-font mt-3 text-3xl font-black">{winner === "player" ? "You own the table!" : "The bot got this one"}</h2><p className="mt-2 text-sm text-slate-400">+{matchReward.xp} XP · Level {matchReward.levelAfter}</p>{matchReward.levelAfter > matchReward.levelBefore && <motion.div className="mt-3 rounded-full bg-[#b8f36b]/15 px-4 py-2 font-bold text-[#b8f36b]" initial={{ scale:0 }} animate={{ scale:[0,1.15,1] }}>Level up!</motion.div>}{matchReward.unlocked.map((id) => <motion.div key={id} className="mt-3 rounded-xl border border-amber-300/20 bg-amber-300/10 p-3" initial={{ x:-20, opacity:0 }} animate={{ x:0, opacity:1 }}><span className="text-2xl">{achievementLabels[id].icon}</span><div className="text-xs font-bold text-amber-200">Achievement unlocked</div><div>{achievementLabels[id].title}</div></motion.div>)}<div className="mt-5 flex gap-2"><button className="secondary-button flex-1 px-4 py-3" onClick={onBack}>Menu</button><button className="primary-button flex-1 px-4 py-3" onClick={() => window.location.reload()}>Play again</button></div></motion.section></motion.div>}</AnimatePresence>
-      <AnimatePresence>{eventLocked && <motion.div className="pointer-events-auto fixed inset-0 z-[70] cursor-wait" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }} aria-live="polite"><motion.div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full border border-white/10 bg-[#12101d]/90 px-4 py-2 text-xs font-bold text-[#b8f36b] shadow-xl backdrop-blur" initial={{ y:20 }} animate={{ y:0 }}>Let it land…</motion.div></motion.div>}</AnimatePresence>
       <AnimatePresence>{miniGameReveal && <motion.div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 px-4 backdrop-blur-md" initial={{ opacity:0 }} animate={{ opacity:1 }} exit={{ opacity:0 }}><motion.section role="dialog" aria-modal="true" aria-labelledby="minigame-result-title" className="glass-panel relative w-full max-w-2xl overflow-hidden rounded-3xl p-7 text-center" initial={{ scale:.9, y:25 }} animate={{ scale:1, y:0 }}><div className="eyebrow">Minigame result</div><h2 id="minigame-result-title" className="display-font mt-2 text-3xl font-black">{miniGameReveal.winner ? `${miniGameReveal.winner === "player" ? "You win!" : "AI wins!"}` : "It’s a tie!"}</h2>{miniGameReveal.type === "rps" ? <div className="mt-5 grid grid-cols-[1fr_auto_1fr] items-end gap-3"><div className={miniGameReveal.winner === "player" ? "rps-choice rps-choice--winner" : "rps-choice"}><RpsTosser choice={miniGameReveal.playerChoice} animate compact/><strong>You</strong><small>{miniGameReveal.playerChoice}</small></div><div className="display-font pb-16 text-xl font-black text-rose-300">VS</div><div className={miniGameReveal.winner === "ai" ? "rps-choice rps-choice--winner" : "rps-choice"}><RpsTosser choice={miniGameReveal.aiChoice} animate compact/><strong>AI</strong><small>{miniGameReveal.aiChoice}</small></div></div> : <div className="mt-5 grid grid-cols-[1fr_auto] items-center gap-5 text-left max-sm:grid-cols-1"><CoinTosser active={false} landed className="mx-auto"/><div className="text-center"><div className="display-font text-5xl font-black text-amber-300">{miniGameReveal.landed === "heads" ? "HEADS" : "TAILS"}</div><p className="mt-2 text-sm text-slate-400">{miniGameReveal.choice} was called.</p></div></div>}<p className="mt-5 text-sm text-slate-300">{miniGameReveal.loser ? `${miniGameReveal.loser === "player" ? "You draw" : "AI draws"} ${miniGameReveal.penalty} cards.` : "No penalty this time."}</p><motion.div className="mx-auto mt-5 h-1.5 max-w-xs origin-left rounded-full bg-gradient-to-r from-violet-500 to-[#b8f36b]" initial={{ scaleX:1 }} animate={{ scaleX:0 }} transition={{ duration:5, ease:"linear" }}/></motion.section></motion.div>}</AnimatePresence>
 
       {pendingWild && pendingWild.player === "player" && (
