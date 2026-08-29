@@ -40,6 +40,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
     [],
   );
   const socketRef = useRef<WebSocket | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
   const nameRef = useRef(name);
   const sessionTokenRef = useRef(
     window.localStorage.getItem("chillno-session") ?? window.crypto.randomUUID(),
@@ -211,10 +212,18 @@ export default function Online({ onBack }: { onBack: () => void }) {
   }
 
   function handleJoinPrivate() {
-    if (!connected) return;
-    if (!privateCode.trim()) return;
+    if (!connected) {
+      setError("Still connecting to multiplayer. Give it a moment, then try again.");
+      return;
+    }
+    if (!privateCode.trim()) {
+      setError("Enter a room code first.");
+      return;
+    }
     if (!nameReady) {
-      setError("Please enter a name to play.");
+      setError("Pick your player name above, then join the room.");
+      nameInputRef.current?.focus();
+      nameInputRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
     send({ type: "set_name", name });
@@ -310,6 +319,7 @@ export default function Online({ onBack }: { onBack: () => void }) {
       <div className="glass-panel rounded-3xl p-6 text-sm text-slate-200">
         <div className="text-slate-400">Your Name (Required)</div>
         <input
+          ref={nameInputRef}
           className="mt-2 w-full rounded-md border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 focus:border-emerald-500 focus:outline-none"
           placeholder="Pick a name"
           value={name}
@@ -390,11 +400,13 @@ export default function Online({ onBack }: { onBack: () => void }) {
               <button
                 className="primary-button px-6 py-3 text-sm disabled:opacity-50"
                 onClick={handleJoinPrivate}
-                disabled={!connected || !privateCode.trim() || !nameReady}
+                disabled={!privateCode.trim()}
               >
-                Join This Room
+                {!connected ? "Connect & Join" : !nameReady ? "Add Name & Join" : "Join This Room"}
               </button>
             </div>
+            {!nameReady && <p className="mt-2 text-xs text-amber-200">You need a player name. Add it in the field above—your invite code is already loaded.</p>}
+            {!connected && <p className="mt-2 text-xs text-slate-400">Multiplayer is still connecting. You can press the button to check again.</p>}
           </>
         )}
         {error && (
