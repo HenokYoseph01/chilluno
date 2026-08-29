@@ -792,7 +792,7 @@ export default function OnlineGame({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <motion.div
             key={coinImpactKey}
-            className="coin-dialog relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200 shadow-2xl"
+            className="coin-dialog relative w-full max-w-2xl overflow-visible rounded-3xl border border-slate-800 bg-slate-900 p-5 text-sm text-slate-200 shadow-2xl"
             animate={
               coinFlip.result && !coinFlip.active
                 ? {
@@ -948,7 +948,7 @@ export default function OnlineGame({
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
             <motion.div
               key={coinImpactKey}
-              className="coin-dialog relative w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/95 px-6 py-6 text-center text-sm text-slate-200 shadow-2xl"
+              className="coin-dialog relative w-full max-w-2xl overflow-visible rounded-3xl border border-slate-800 bg-slate-900/95 px-6 py-6 text-center text-sm text-slate-200 shadow-2xl"
               animate={
                 coinFlip.result && !coinFlip.active
                   ? {

@@ -930,17 +930,9 @@ export default function Game({
         ) {
           return prev;
         }
-        if (prev.aiHand.length === 1 && !prev.unoCalled.ai) {
-          showUnoBanner("AI called UNO!");
-          return addHistoryEvent(
-            {
-              ...prev,
-              unoCalled: { ...prev.unoCalled, ai: true },
-              actionNonce: prev.actionNonce + 1,
-            },
-            "AI called UNO before playing its last card.",
-          );
-        }
+        // The UNO reaction timer owns this race. The AI cannot silently claim UNO
+        // from its play routine before the player gets their difficulty-based window.
+        if (prev.aiHand.length === 1 && !prev.unoCalled.ai) return prev;
         if (prev.pendingDraw2 > 0) {
           const draw2Index = prev.aiHand.findIndex(
             (card) => card.value === "Draw2",
@@ -1561,7 +1553,7 @@ export default function Game({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4">
           <motion.div
             key={coinImpactKey}
-            className="coin-dialog relative min-h-[350px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900 p-5 pl-56 text-sm text-slate-200"
+            className="coin-dialog relative min-h-[350px] w-full max-w-xl overflow-visible rounded-xl border border-slate-800 bg-slate-900 p-5 pl-56 text-sm text-slate-200"
             animate={
               coinFlip.result && !coinFlip.active
                 ? {
@@ -1723,7 +1715,7 @@ export default function Game({
           <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 px-4">
             <motion.div
               key={coinImpactKey}
-              className="coin-dialog relative min-h-[320px] w-full max-w-xl overflow-hidden rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 pl-52 text-center text-sm text-slate-200"
+              className="coin-dialog relative min-h-[320px] w-full max-w-xl overflow-visible rounded-xl border border-slate-800 bg-slate-900/90 px-6 py-5 pl-52 text-center text-sm text-slate-200"
               animate={
                 coinFlip.result && !coinFlip.active
                   ? {
